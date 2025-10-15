@@ -4,12 +4,13 @@ const app = express();
 app.use(express.json());
 
 app.get("/", (req, res) => {
-  res.send("Hola desde Cloud Run con Express 🚀");
+  res.send("Hola mundo");
 });
 
 app.post("/saludo", (req, res) => {
-  const nombre = req.body.nombre || "Desconocido";
-  res.json({ mensaje: `Hola ${nombre}, saludos desde Cloud Run! 🌤️` });
+  const ad_accounts = req.body.ad_accounts;
+
+  res.send(ad_accounts.length);
 });
 
 const PORT = process.env.PORT || 8080;
