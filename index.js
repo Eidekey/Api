@@ -8,6 +8,7 @@ app.get("/", (req, res) => {
 });
 
 app.post("/saludo", (req, res) => {
+  
   const ad_accounts = req.body.ad_accounts;
 
   res.send(ad_accounts.length);
