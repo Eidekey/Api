@@ -11,7 +11,7 @@ app.post("/saludo", (req, res) => {
   
   const ad_accounts = req.body.ad_accounts;
 
-  res.send(ad_accounts.length);
+  res.send({count: ad_accounts.length});
 });
 
 const PORT = process.env.PORT || 8080;
