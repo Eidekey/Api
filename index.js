@@ -1,34 +1,48 @@
 import express from "express";
-const app = express();
+import fetch from "node-fetch"; // 👈 asegúrate de tenerlo en package.json
 
+const app = express();
 app.use(express.json());
 
+// Ruta de prueba
 app.get("/", (req, res) => {
-  res.send("Hola mundo");
+  res.send("Hola mundo desde Cloud Run 🌤️");
 });
 
-app.post("/saludo", (req, res) => {
-  console.log("Body completo recibido:", req.body);
-  console.log("Tipo de body:", typeof req.body);
-  console.log("Tiene ad_accounts?:", req.body.hasOwnProperty("ad_accounts"));
-  console.log("Valor de ad_accounts:", req.body.ad_accounts);
+app.post("/saludo", async (req, res) => {
+  try {
+    console.log("Body recibido:", req.body);
 
-  const token = "EAAWKn4ZCjg3ABPvM6yNdpT3m0YC4NlOZBqnk6NwP3357JZBlLVtfvSggaJde3bkislJxnIjagEGl5TZCgh2ZB9wFBHtBf7UxkaU90P3g7LMOpkv90ByZC4ODy83ebh4x7egB6vqsHZCecKWGwgAuKLHDOflDLKwlWMNZBv5bQgpCGvv7JlPkUCa4PJlRIRYvfeL5SAZDZD"
-  const ad_accounts = req.body?.ad_accounts ?? [];
-  const batch = []
-  const url_base = "https://graph.facebook.com/v23.0/"
-  ad_accounts.forEach((ad_account)=>{
-    batch.push({method: "GET", relative_url: `${ad_account}/campaigns?fields=name,status`});
-  })
+    const token =
+      "EAAWKn4ZCjg3ABPvM6yNdpT3m0YC4NlOZBqnk6NwP3357JZBlLVtfvSggaJde3bkislJxnIjagEGl5TZCgh2ZB9wFBHtBf7UxkaU90P3g7LMOpkv90ByZC4ODy83ebh4x7egB6vqsHZCecKWGwgAuKLHDOflDLKwlWMNZBv5bQgpCGvv7JlPkUCa4PJlRIRYvfeL5SAZDZD";
 
-  res = fecth(url_base,{
-    method: "POST",
-    payload: {
-      access_tocken: token,
-      batch: JSON.stringify(batch)
-  })
-  console.log(res)
-  //res.json({ count: ad_accounts.length });
+    const ad_accounts = req.body?.ad_accounts ?? [];
+    const url_base = "https://graph.facebook.com/v23.0/";
+
+    // Creamos el batch de solicitudes
+    const batch = ad_accounts.map(ad_account => ({
+      method: "GET",
+      relative_url: `${ad_account}/campaigns?fields=name,status`,
+    }));
+
+    // Llamada al endpoint de batch
+    const response = await fetch(url_base, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        access_token: token,
+        batch: batch,
+      }),
+    });
+
+    const data = await response.json();
+
+    console.log("Respuesta de Facebook:", data);
+    res.json(data); // enviamos la respuesta al cliente
+  } catch (err) {
+    console.error("❌ Error general:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 const PORT = process.env.PORT || 8080;
