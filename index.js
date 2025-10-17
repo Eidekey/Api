@@ -8,10 +8,16 @@ app.get("/", (req, res) => {
 });
 
 app.post("/saludo", express.json(), (req, res) => {
-  console.log("Cuerpo recibido:", req.body); // <--- esto te ayudará a ver en logs
+  console.log("Body completo recibido:", req.body);
+  console.log("Tipo de body:", typeof req.body);
+  console.log("Tiene ad_accounts?:", req.body.hasOwnProperty("ad_accounts"));
+
   const ad_accounts = req.body?.ad_accounts ?? [];
+  console.log("Valor de ad_accounts:", ad_accounts);
+
   res.json({ count: ad_accounts.length });
 });
+
 
 
 const PORT = process.env.PORT || 8080;
