@@ -27,7 +27,7 @@ app.post("/saludo", (req, res) => {
       access_tocken: token,
       batch: JSON.stringify(batch)
   })
-  
+  console.log(res)
   //res.json({ count: ad_accounts.length });
 });
 
