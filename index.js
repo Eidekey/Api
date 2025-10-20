@@ -40,7 +40,7 @@ app.post("/saludo", async (req, res) => {
 
     const data = await response.json();
 
-    console.log("Respuesta de Facebook:", data.body.data[0]);
+    console.log("Respuesta de Facebook:", data.body);
     res.json(data); // enviamos la respuesta al cliente
   } catch (err) {
     console.error("Error general:", err);
