@@ -39,8 +39,9 @@ app.post("/saludo", async (req, res) => {
     console.log("Response sin pasar a JSON: " + response)
 
     const data = await response.json();
+    const data2 = JSON.parse(data.body)
 
-    console.log("Respuesta de Facebook:", data);
+    console.log("Respuesta de Facebook:", data2);
     res.json(data); // enviamos la respuesta al cliente
   } catch (err) {
     console.error("Error general:", err);
