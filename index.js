@@ -1,13 +1,14 @@
 import express from "express";
-import fetch from "node-fetch"; // 👈 asegúrate de tenerlo en package.json
+import fetch from "node-fetch";
 
 const app = express();
 app.use(express.json());
 
-// Ruta de prueba
 app.get("/", (req, res) => {
   res.send("Hola mundo desde Cloud Run 🌤️");
 });
+
+// =============================================================
 
 app.post("/saludo", async (req, res) => {
   try {
@@ -22,7 +23,7 @@ app.post("/saludo", async (req, res) => {
     // Creamos el batch de solicitudes
     const batch = ad_accounts.map(ad_account => ({
       method: "GET",
-      relative_url: `${ad_account}/campaigns?fields=name,status`,
+      relative_url: `${ad_account}/campaigns?fields=name,status&filtering=[{'field':'status','operator':'IN','value':['ACTIVE']}]&limit=1000`,
     }));
 
     // Llamada al endpoint de batch
@@ -40,7 +41,7 @@ app.post("/saludo", async (req, res) => {
     console.log("Respuesta de Facebook:", data);
     res.json(data); // enviamos la respuesta al cliente
   } catch (err) {
-    console.error("❌ Error general:", err);
+    console.error("Error general:", err);
     res.status(500).json({ error: err.message });
   }
 });
