@@ -23,7 +23,7 @@ app.post("/saludo", async (req, res) => {
     // Creamos el batch de solicitudes
     const batch = ad_accounts.map(ad_account => ({
       method: "GET",
-      relative_url: `${ad_account}/campaigns?fields=name,status&filtering=[{'field':'status','operator':'IN','value':['ACTIVE']}]&limit=1000`,
+      relative_url: `${ad_account}/campaigns?fields=name,status&filtering=[{'field':'effective_status','operator':'IN','value':['ACTIVE']}]&limit=1000`,
     }));
 
     // Llamada al endpoint de batch
