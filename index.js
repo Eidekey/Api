@@ -36,6 +36,8 @@ app.post("/saludo", async (req, res) => {
       }),
     });
 
+    console.log("Response sin pasar a JSON: ",response,null,2)
+
     const data = await response.json();
 
     console.log("Respuesta de Facebook:", data);
