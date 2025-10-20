@@ -36,7 +36,7 @@ app.post("/saludo", async (req, res) => {
       }),
     });
 
-    console.log("Response sin pasar a JSON: " + response)
+    //console.log("Response sin pasar a JSON: " + response)
 
     const data = await response.json();
 
