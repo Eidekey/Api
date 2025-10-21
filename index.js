@@ -7,9 +7,38 @@ app.use(express.json());
 
 app.post("/saludo", async (req, res) => {
   if(req.body.tipo_solicitud == "smoked"){
-    const SINCE = new Date()
+    
+    // ===========  Fechas  ==========
 
+    const formatDate = (date) =>
+      new Intl.DateTimeFormat("en-CA", { // en-CA = formato yyyy-MM-dd
+        timeZone: "America/Bogota",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+      }).format(date);
+
+    const today = new Date();
+    const sinceDate3 = new Date(today);
+    sinceDate3.setDate(today.getDate() - 3);
+    const sinceDate7 = new Date(today);
+    sinceDate7.setDate(today.getDate() - 7);
+
+    // 3 dias
+    const fecha3dias = {
+      since: formatDate(sinceDate3),
+      until: formatDate(today)
+    }
+    // 7 dias
+    const fecha7dias = {
+      since: formatDate(sinceDate7),
+      until: formatDate(today)
+    }
+
+    
     try {
+      console.log(fecha3dias.since)
+      console.log(fecha7dias.until)
       console.log("Body recibido:", req.body);
   
       const token = "EAAWKn4ZCjg3ABPvM6yNdpT3m0YC4NlOZBqnk6NwP3357JZBlLVtfvSggaJde3bkislJxnIjagEGl5TZCgh2ZB9wFBHtBf7UxkaU90P3g7LMOpkv90ByZC4ODy83ebh4x7egB6vqsHZCecKWGwgAuKLHDOflDLKwlWMNZBv5bQgpCGvv7JlPkUCa4PJlRIRYvfeL5SAZDZD"; // ⚠️ Usa variables de entorno para el token
