@@ -20,7 +20,7 @@ app.post("/saludo", async (req, res) => {
       const group = ad_accounts.slice(index, index + 50);
       const templateBatch = group.map(ad_account => ({
         method: "GET",
-        relative_url: `${ad_account}/campaigns?fields=id,name,effective_status&filtering=[{'field':'effective_status','operator':'IN','value':['ACTIVE']}]&limit=1000`,
+        relative_url: `${ad_account}/campaigns?fields=id,name,effective_status,daily_budget,created_time&filtering=[{'field':'effective_status','operator':'IN','value':['ACTIVE']}]&limit=1000`,
       }));
       batches.push(templateBatch);
       index += 50;
