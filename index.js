@@ -5,11 +5,8 @@ const app = express();
 app.use(express.json());
 
 app.post("/saludo", async (req, res) => {
-  if (req.body.tipo_solicitud !== "smoked") {
-    return res.status(400).json({ error: "tipo_solicitud no reconocido" });
-  }
-
-  // ===========  Fechas  ==========
+  if (req.body.tipo_solicitud == "smoked") {
+    // ===========  Fechas  ==========
   const formatDate = (date) =>
     new Intl.DateTimeFormat("en-CA", {
       timeZone: "America/Bogota",
@@ -199,7 +196,12 @@ app.post("/saludo", async (req, res) => {
     console.error("❌ Error general:", err);
     res.status(500).json({ error: err.message });
   }
-});
+
+  }else{
+    return res.status(400).json({ error: "tipo_solicitud no reconocido" });
+  }
+
+})
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`🚀 Servidor activo en puerto ${PORT}`));
