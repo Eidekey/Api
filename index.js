@@ -97,7 +97,7 @@ app.post("/saludo", async (req, res) => {
         const group = ad_accounts.slice(index, index + 50);
         const batch = group.map((ad_account) => ({
           method: "GET",
-          relative_url: `${ad_account}/insights?fields=campaign_id,adset_id,date_start,date_stop,actions,spend,impressions,clicks,reach&time_range=${timeRangeEncoded}&level=campaign&limit=500`,
+          relative_url: `${ad_account}/insights?fields=campaign_id,adset_id,date_start,date_stop,actions,spend,impressions,clicks,reach,cpm&time_range=${timeRangeEncoded}&level=campaign&limit=500`,
         }));
         insightBatches.push(batch);
         index += 50;
