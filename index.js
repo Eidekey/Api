@@ -7,7 +7,7 @@ app.use(express.json());
 app.post("/saludo", async (req, res) => {
   if(req.body.tipo_solicitud == "smoked"){
     const SINCE = new Date()
-    const formatoFecha = Intl.DateTimeFormat(en-EN, {year: "numeric", month: "2-digit", day: "2-digit"}).format(SINCE);
+    const formatoFecha = new Intl.DateTimeFormat(en-GB, {year: "numeric", month: "2-digit", day: "2-digit"}).format(SINCE);
     console.log(formatoFecha)
     try {
       console.log("Body recibido:", req.body);
@@ -20,14 +20,18 @@ app.post("/saludo", async (req, res) => {
       const batches = [];
   
       // Dividimos las cuentas en grupos de hasta 50
-      while (index < ad_accounts.length) {
-        const group = ad_accounts.slice(index, index + 50);
-        const templateBatch = group.map(ad_account => ({
-          method: "GET",
-          relative_url: `${ad_account}/campaigns?fields=id,name,effective_status,daily_budget,created_time&filtering=[{'field':'effective_status','operator':'IN','value':['ACTIVE']}]&limit=1000`,
-        }));
-        batches.push(templateBatch);
-        index += 50;
+      if(!ad_accounts.length){
+        return res.status(400).json({ error: "No se enviaron ad_accounts" });
+      }else{
+        while (index < ad_accounts.length) {
+          const group = ad_accounts.slice(index, index + 50);
+          const templateBatch = group.map(ad_account => ({
+            method: "GET",
+            relative_url: `${ad_account}/campaigns?fields=id,name,effective_status,daily_budget,created_time&filtering=[{'field':'effective_status','operator':'IN','value':['ACTIVE']}]&limit=1000`,
+          }));
+          batches.push(templateBatch);
+          index += 50;
+        }
       }
   
       console.log(`Se generaron ${batches.length} lotes de batch requests`);
@@ -51,7 +55,7 @@ app.post("/saludo", async (req, res) => {
       );
   
       // Combinar todos los resultados en un solo array
-      const combined = responses.flatMap(r => r);
+      const combined = responses.flatMap(r => r.map(item => JSON.parse(item.body)));
       res.json(combined);
   
     } catch (err) {
@@ -59,6 +63,8 @@ app.post("/saludo", async (req, res) => {
       res.status(500).json({ error: err.message });
     }
 
+  }else {
+    return res.status(400).json({ error: "tipo_solicitud no reconocido" });
   }
 });
 
