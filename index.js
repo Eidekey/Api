@@ -5,7 +5,7 @@ const app = express();
 app.use(express.json());
 
 app.post("/saludo", async (req, res) => {
-  if(req.body.tipo_solicitud == "smoked"){
+  if(req.body.tipo_solicitud[0] == "smoked"){
     const SINCE = new Date()
     const formatoFecha = Intl.DateTimeFormat(en-EN, {year: "numeric", month: "2-digit", day: "2-digit"}).format(SINCE);
     console.log(formatoFecha)
