@@ -42,10 +42,29 @@ app.post("/saludo", async (req, res) => {
     }
 
     const url_base = "https://graph.facebook.com/v23.0/";
-    let index = 0;
+
+    // ======== Obtener nombres de las cuentas ========
+    console.log("📡 Obteniendo nombres de las ad accounts...");
+    const accountNames = {};
+
+    await Promise.all(
+      ad_accounts.map(async (account_id) => {
+        try {
+          const resp = await fetch(`${url_base}${account_id}?fields=name&access_token=${token}`);
+          const data = await resp.json();
+          accountNames[account_id] = data.name || "Sin nombre";
+        } catch {
+          accountNames[account_id] = "Desconocido";
+        }
+      })
+    );
+
+    console.log("✅ Nombres de ad accounts obtenidos.");
 
     // ======== Llamada: Campañas ========
     const campaignBatches = [];
+    let index = 0;
+
     while (index < ad_accounts.length) {
       const group = ad_accounts.slice(index, index + 50);
       const batch = group.map((ad_account) => ({
@@ -72,18 +91,27 @@ app.post("/saludo", async (req, res) => {
       })
     );
 
-    const allCampaigns = campaignResponses.flatMap((r) =>
-      r
-        .map((item) => {
-          try {
-            const body = JSON.parse(item.body);
-            return body.data ?? [];
-          } catch {
-            return [];
-          }
-        })
-        .flat()
-    );
+    // Extraer todas las campañas y agregar account_name
+    const allCampaigns = campaignResponses
+      .flatMap((r) =>
+        r
+          .map((item, idx) => {
+            try {
+              const body = JSON.parse(item.body);
+              // Determinar qué ad account corresponde
+              const adAccount = ad_accounts[Math.floor(idx / 50)] || "unknown";
+              return (body.data ?? []).map((camp) => ({
+                ...camp,
+                ad_account_id: adAccount,
+                account_name: accountNames[adAccount] || "Sin nombre",
+              }));
+            } catch {
+              return [];
+            }
+          })
+          .flat()
+      )
+      .flat();
 
     console.log(`📈 Total campañas obtenidas: ${allCampaigns.length}`);
 
@@ -119,18 +147,25 @@ app.post("/saludo", async (req, res) => {
         })
       );
 
-      const allInsights = insightResponses.flatMap((r) =>
-        r
-          .map((item) => {
-            try {
-              const body = JSON.parse(item.body);
-              return body.data ?? [];
-            } catch {
-              return [];
-            }
-          })
-          .flat()
-      );
+      const allInsights = insightResponses
+        .flatMap((r, batchIdx) =>
+          r
+            .map((item, idx) => {
+              try {
+                const body = JSON.parse(item.body);
+                const adAccount = ad_accounts[batchIdx * 50 + idx] || "unknown";
+                return (body.data ?? []).map((ins) => ({
+                  ...ins,
+                  ad_account_id: adAccount,
+                  account_name: accountNames[adAccount] || "Sin nombre",
+                }));
+              } catch {
+                return [];
+              }
+            })
+            .flat()
+        )
+        .flat();
 
       console.log(`📊 Total insights ${label}: ${allInsights.length}`);
       return allInsights;
