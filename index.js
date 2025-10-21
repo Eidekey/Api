@@ -10,7 +10,7 @@ app.post("/saludo", async (req, res) => {
       return res.status(400).json({ error: "tipo_solicitud no reconocido" });
     }
 
-    // ===========  Fechas ==========
+    // ===================== FECHAS =====================
     const formatDate = (date) =>
       new Intl.DateTimeFormat("en-CA", {
         timeZone: "America/Bogota",
@@ -20,17 +20,21 @@ app.post("/saludo", async (req, res) => {
       }).format(date);
 
     const today = new Date();
-    const sinceDate3 = new Date(today);
-    sinceDate3.setDate(today.getDate() - 3);
 
     const fecha3dias = {
-      since: formatDate(sinceDate3),
+      since: formatDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 3)),
       until: formatDate(today),
     };
 
-    console.log("🗓 Rango de fechas (3 días):", fecha3dias);
+    const fecha7dias = {
+      since: formatDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 7)),
+      until: formatDate(today),
+    };
 
-    // ===========  Validación ==========
+    console.log("🗓 Fechas (3 días):", fecha3dias);
+    console.log("🗓 Fechas (7 días):", fecha7dias);
+
+    // ===================== VALIDACIÓN =====================
     const ad_accounts = req.body?.ad_accounts ?? [];
     if (!ad_accounts.length) {
       return res.status(400).json({ error: "No se enviaron ad_accounts" });
@@ -40,7 +44,7 @@ app.post("/saludo", async (req, res) => {
     const url_base = "https://graph.facebook.com/v23.0/";
 
     // ============================================================
-    // 🔹 PRIMERA LLAMADA: obtener CAMPAÑAS ACTIVAS
+    // PRIMERA LLAMADA: obtener CAMPAÑAS ACTIVAS
     // ============================================================
 
     let index = 0;
@@ -56,26 +60,21 @@ app.post("/saludo", async (req, res) => {
       index += 50;
     }
 
-    console.log(`Se generaron ${batches.length} lotes de batch requests de campañas`);
+    console.log(`📦 Se generaron ${batches.length} lotes de batch requests de campañas`);
 
     const responsesCampaigns = await Promise.all(
       batches.map(async (batch, i) => {
         const response = await fetch(url_base, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            access_token: token,
-            batch: batch,
-          }),
+          body: JSON.stringify({ access_token: token, batch }),
         });
-
         const data = await response.json();
         console.log(`Batch de campañas ${i + 1} procesado`);
         return data;
       })
     );
 
-    // Combinar todas las campañas en un solo array plano
     const allCampaigns = responsesCampaigns.flatMap((batch) =>
       batch.flatMap((item) => {
         try {
@@ -91,80 +90,79 @@ app.post("/saludo", async (req, res) => {
     console.log(`Total campañas obtenidas: ${allCampaigns.length}`);
 
     // ============================================================
-    // 🔹 SEGUNDA LLAMADA: obtener INSIGHTS
+    // SEGUNDA LLAMADA: obtener INSIGHTS (3 DÍAS)
     // ============================================================
 
-    index = 0;
-    batches = [];
+    async function getInsightsForRange(timeRange, label) {
+      let index = 0;
+      let batches = [];
+      const timeRangeEncoded = encodeURIComponent(JSON.stringify(timeRange));
 
-    const timeRangeEncoded = encodeURIComponent(
-      JSON.stringify({ since: fecha3dias.since, until: fecha3dias.until })
-    );
+      while (index < ad_accounts.length) {
+        const group = ad_accounts.slice(index, index + 50);
+        const templateBatch = group.map((ad_account) => ({
+          method: "GET",
+          relative_url: `${ad_account}/insights?fields=campaign_id,adset_id,date_start,date_stop,actions,spend,impressions,clicks&time_range=${timeRangeEncoded}&level=campaign&limit=500`,
+        }));
+        batches.push(templateBatch);
+        index += 50;
+      }
 
-    while (index < ad_accounts.length) {
-      const group = ad_accounts.slice(index, index + 50);
-      const templateBatch = group.map((ad_account) => ({
-        method: "GET",
-        relative_url: `${ad_account}/insights?fields=campaign_id,adset_id,date_start,date_stop,actions,spend,impressions,clicks&time_range=${timeRangeEncoded}&level=campaign&limit=500`,
-      }));
-      batches.push(templateBatch);
-      index += 50;
+      console.log(`(${label}) Se generaron ${batches.length} lotes de batch requests de insights`);
+
+      const responsesInsights = await Promise.all(
+        batches.map(async (batch, i) => {
+          const response = await fetch(url_base, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ access_token: token, batch }),
+          });
+
+          const data = await response.json();
+          console.log(`(${label}) Batch ${i + 1} procesado`);
+          return data;
+        })
+      );
+
+      const allInsights = responsesInsights.flatMap((batch) =>
+        batch.flatMap((item) => {
+          try {
+            const parsed = JSON.parse(item.body);
+            return parsed.data || [];
+          } catch (err) {
+            console.error(`(${label}) Error parseando insights:`, err);
+            return [];
+          }
+        })
+      );
+
+      console.log(`(${label}) Total insights obtenidos: ${allInsights.length}`);
+      return allInsights;
     }
 
-    console.log(`Se generaron ${batches.length} lotes de batch requests de insights`);
-
-    const responsesInsights = await Promise.all(
-      batches.map(async (batch, i) => {
-        const response = await fetch(url_base, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            access_token: token,
-            batch: batch,
-          }),
-        });
-
-        const data = await response.json();
-        console.log(`Batch de insights ${i + 1} procesado`);
-        return data;
-      })
-    );
-
-    // Combinar todos los insights en un solo array plano
-    const allInsights = responsesInsights.flatMap((batch) =>
-      batch.flatMap((item) => {
-        try {
-          const parsed = JSON.parse(item.body);
-          return parsed.data || [];
-        } catch (err) {
-          console.error("Error parseando insights:", err);
-          return [];
-        }
-      })
-    );
-
-    console.log(`Total insights obtenidos: ${allInsights.length}`);
+    const insights3dias = await getInsightsForRange(fecha3dias, "3 días");
+    const insights7dias = await getInsightsForRange(fecha7dias, "7 días");
 
     // ============================================================
-    // 🔹 UNIR CAMPAÑAS + INSIGHTS POR campaign_id
+    // UNIR CAMPAÑAS + INSIGHTS
     // ============================================================
 
-    const insightsMap = new Map();
-    allInsights.forEach((insight) => {
-      if (insight.campaign_id) {
-        insightsMap.set(insight.campaign_id, insight);
-      }
-    });
+    function mergeCampaignsAndInsights(campaigns, insights) {
+      const insightsMap = new Map();
+      insights.forEach((insight) => {
+        if (insight.campaign_id) insightsMap.set(insight.campaign_id, insight);
+      });
 
-    const merged = allCampaigns.map((camp) => {
-      const insight = insightsMap.get(camp.id);
-      return {
+      return campaigns.map((camp) => ({
         ...camp,
-        insights: insight || null,
-      };
-    });
+        insights: insightsMap.get(camp.id) || null,
+      }));
+    }
 
-    console.log(`Total de campañas combinadas con insights: ${merged.length}`);
+    const merged3dias = mergeCampaignsAndInsights(allCampaigns, insights3dias);
+    const merged7dias = mergeCampaignsAndInsights(allCampaigns, insights7dias);
+
+    console.log(`Combinación completada: ${merged3dias.length} (3d) / ${merged7dias.length} (7d)`);
 
     // ============================================================
     // 🔹 RESPUESTA FINAL
@@ -172,9 +170,14 @@ app.post("/saludo", async (req, res) => {
 
     res.json({
       total_campaigns: allCampaigns.length,
-      total_insights: allInsights.length,
-      merged_count: merged.length,
-      data: merged,
+      insights_summary: {
+        "3_dias": insights3dias.length,
+        "7_dias": insights7dias.length,
+      },
+      merged: {
+        "3_dias": merged3dias,
+        "7_dias": merged7dias,
+      },
     });
 
   } catch (err) {
