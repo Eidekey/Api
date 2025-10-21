@@ -8,7 +8,7 @@ app.post("/saludo", async (req, res) => {
   try {
     console.log("Body recibido:", req.body);
 
-    const token = "EAA...."; // ⚠️ Usa variables de entorno para el token
+    const token = "EAAWKn4ZCjg3ABPvM6yNdpT3m0YC4NlOZBqnk6NwP3357JZBlLVtfvSggaJde3bkislJxnIjagEGl5TZCgh2ZB9wFBHtBf7UxkaU90P3g7LMOpkv90ByZC4ODy83ebh4x7egB6vqsHZCecKWGwgAuKLHDOflDLKwlWMNZBv5bQgpCGvv7JlPkUCa4PJlRIRYvfeL5SAZDZD"; // ⚠️ Usa variables de entorno para el token
     const ad_accounts = req.body?.ad_accounts ?? [];
     const url_base = "https://graph.facebook.com/v23.0/";
 
@@ -41,7 +41,7 @@ app.post("/saludo", async (req, res) => {
         });
 
         const data = await response.json();
-        console.log(`✅ Batch ${i + 1} procesado`);
+        console.log(`Batch ${i + 1} procesado`);
         return data;
       })
     );
