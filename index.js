@@ -19,20 +19,22 @@ app.post("/saludo", async (req, res) => {
     }).format(date);
 
   const today = new Date();
-  const sinceDate3 = new Date(today);
-  sinceDate3.setDate(today.getDate() - 3);
+  const since3 = new Date(today);
+  since3.setDate(today.getDate() - 3);
 
-  const fecha3dias = {
-    since: formatDate(sinceDate3),
-    until: formatDate(today),
+  const since7 = new Date(today);
+  since7.setDate(today.getDate() - 7);
+
+  const fechas = {
+    tresDias: { since: formatDate(since3), until: formatDate(today) },
+    sieteDias: { since: formatDate(since7), until: formatDate(today) },
   };
 
   try {
-    console.log("🗓️ Fechas:", fecha3dias);
-    console.log("📩 Body recibido:", req.body);
+    console.log("📅 Fechas:", fechas);
+    console.log("📦 Body recibido:", req.body);
 
-    const token =
-      "EAAWKn4ZCjg3ABPvM6yNdpT3m0YC4NlOZBqnk6NwP3357JZBlLVtfvSggaJde3bkislJxnIjagEGl5TZCgh2ZB9wFBHtBf7UxkaU90P3g7LMOpkv90ByZC4ODy83ebh4x7egB6vqsHZCecKWGwgAuKLHDOflDLKwlWMNZBv5bQgpCGvv7JlPkUCa4PJlRIRYvfeL5SAZDZD";
+    const token = "EAAWKn4ZCjg3ABPvM6yNdpT3m0YC4NlOZBqnk6NwP3357JZBlLVtfvSggaJde3bkislJxnIjagEGl5TZCgh2ZB9wFBHtBf7UxkaU90P3g7LMOpkv90ByZC4ODy83ebh4x7egB6vqsHZCecKWGwgAuKLHDOflDLKwlWMNZBv5bQgpCGvv7JlPkUCa4PJlRIRYvfeL5SAZDZD";
     const ad_accounts = req.body?.ad_accounts ?? [];
 
     if (!ad_accounts.length) {
@@ -44,7 +46,6 @@ app.post("/saludo", async (req, res) => {
 
     // ======== Llamada: Campañas ========
     const campaignBatches = [];
-
     while (index < ad_accounts.length) {
       const group = ad_accounts.slice(index, index + 50);
       const batch = group.map((ad_account) => ({
@@ -55,17 +56,14 @@ app.post("/saludo", async (req, res) => {
       index += 50;
     }
 
-    console.log(`🚀 Se generaron ${campaignBatches.length} lotes de campañas`);
+    console.log(`📊 Se generaron ${campaignBatches.length} lotes de campañas`);
 
     const campaignResponses = await Promise.all(
       campaignBatches.map(async (batch, i) => {
         const response = await fetch(url_base, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            access_token: token,
-            batch: batch,
-          }),
+          body: JSON.stringify({ access_token: token, batch }),
         });
 
         const data = await response.json();
@@ -78,7 +76,8 @@ app.post("/saludo", async (req, res) => {
       r
         .map((item) => {
           try {
-            return JSON.parse(item.body).data;
+            const body = JSON.parse(item.body);
+            return body.data ?? [];
           } catch {
             return [];
           }
@@ -86,75 +85,80 @@ app.post("/saludo", async (req, res) => {
         .flat()
     );
 
-    console.log(`📊 Total campañas obtenidas: ${allCampaigns.length}`);
+    console.log(`📈 Total campañas obtenidas: ${allCampaigns.length}`);
 
-    // ======== Llamada: Insights ========
-    index = 0;
-    const insightBatches = [];
-    const timeRangeEncoded = encodeURIComponent(
-      JSON.stringify({ since: fecha3dias.since, until: fecha3dias.until })
-    );
+    // ======== Llamada: Insights (para 3 y 7 días) ========
+    async function getInsights(timeRange, label) {
+      let index = 0;
+      const insightBatches = [];
+      const timeRangeEncoded = encodeURIComponent(JSON.stringify(timeRange));
 
-    while (index < ad_accounts.length) {
-      const group = ad_accounts.slice(index, index + 50);
-      const batch = group.map((ad_account) => ({
-        method: "GET",
-        relative_url: `${ad_account}/insights?fields=campaign_id,adset_id,date_start,date_stop,actions,spend,impressions,clicks,reach&time_range=${timeRangeEncoded}&level=campaign&limit=500`,
-      }));
-      insightBatches.push(batch);
-      index += 50;
+      while (index < ad_accounts.length) {
+        const group = ad_accounts.slice(index, index + 50);
+        const batch = group.map((ad_account) => ({
+          method: "GET",
+          relative_url: `${ad_account}/insights?fields=campaign_id,adset_id,date_start,date_stop,actions,spend,impressions,clicks,reach&time_range=${timeRangeEncoded}&level=campaign&limit=500`,
+        }));
+        insightBatches.push(batch);
+        index += 50;
+      }
+
+      console.log(`📦 ${label}: ${insightBatches.length} lotes de insights`);
+
+      const insightResponses = await Promise.all(
+        insightBatches.map(async (batch, i) => {
+          const response = await fetch(url_base, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ access_token: token, batch }),
+          });
+
+          const data = await response.json();
+          console.log(`✅ Batch de insights ${label} ${i + 1} procesado`);
+          return data;
+        })
+      );
+
+      const allInsights = insightResponses.flatMap((r) =>
+        r
+          .map((item) => {
+            try {
+              const body = JSON.parse(item.body);
+              return body.data ?? [];
+            } catch {
+              return [];
+            }
+          })
+          .flat()
+      );
+
+      console.log(`📊 Total insights ${label}: ${allInsights.length}`);
+      return allInsights;
     }
 
-    console.log(`🚀 Se generaron ${insightBatches.length} lotes de insights`);
-
-    const insightResponses = await Promise.all(
-      insightBatches.map(async (batch, i) => {
-        const response = await fetch(url_base, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            access_token: token,
-            batch: batch,
-          }),
-        });
-
-        const data = await response.json();
-        console.log(`✅ Batch de insights ${i + 1} procesado`);
-        return data;
-      })
-    );
-
-    const allInsights = insightResponses.flatMap((r) =>
-      r
-        .map((item) => {
-          try {
-            return JSON.parse(item.body).data;
-          } catch {
-            return [];
-          }
-        })
-        .flat()
-    );
-
-    console.log(`📈 Total insights obtenidos: ${allInsights.length}`);
+    const [insights3, insights7] = await Promise.all([
+      getInsights(fechas.tresDias, "3_dias"),
+      getInsights(fechas.sieteDias, "7_dias"),
+    ]);
 
     // ======== Unir campañas + insights ========
-    const insightsMap = new Map(
-      allInsights.map((ins) => [ins.campaign_id, ins])
-    );
+    const mergeData = (insights) => {
+      const map = new Map(insights.map((ins) => [ins.campaign_id, ins]));
+      return allCampaigns.map((camp) => {
+        const match = map.get(camp.id);
+        return match ? { ...camp, ...match } : camp;
+      });
+    };
 
-    const mergedData = allCampaigns.map((camp) => {
-      const match = insightsMap.get(camp.id);
-      return match ? { ...camp, ...match } : camp;
-    });
+    const merged3 = mergeData(insights3);
+    const merged7 = mergeData(insights7);
 
-    console.log(`🔗 Total combinados: ${mergedData.length}`);
+    console.log(`✅ Combinados 3 días: ${merged3.length}`);
+    console.log(`✅ Combinados 7 días: ${merged7.length}`);
 
-    // ======== Responder ========
     res.json({
-      total_campaigns: allCampaigns.length,
-      total_insights: allInsights.length,
-      merged: mergedData,
+      "3_dias": merged3,
+      "7_dias": merged7,
     });
   } catch (err) {
     console.error("❌ Error general:", err);
