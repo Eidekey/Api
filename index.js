@@ -8,8 +8,13 @@ app.use(express.json());
 app.post("/saludo", async (req, res) => {
   if(req.body.tipo_solicitud == "smoked"){
     const SINCE = new Date()
+<<<<<<< HEAD
     // const formatoFecha = new Intl.DateTimeFormat(en-GB, {year: "numeric", month: "2-digit", day: "2-digit"}).format(SINCE);
     // console.log(formatoFecha)
+=======
+    //const formatoFecha = new Intl.DateTimeFormat(en-GB, {year: "numeric", month: "2-digit", day: "2-digit"}).format(SINCE);
+    //console.log(formatoFecha)
+>>>>>>> 9d5800baa09529352afd8ae04e9ca8629ea11be5
     try {
       console.log("Body recibido:", req.body);
   
