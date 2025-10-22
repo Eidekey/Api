@@ -197,6 +197,26 @@ app.post("/saludo", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 
+  }else if(req.body.tipo_solicitud == "Ad_accounts"){
+
+    const token = "EAAWKn4ZCjg3ABPvM6yNdpT3m0YC4NlOZBqnk6NwP3357JZBlLVtfvSggaJde3bkislJxnIjagEGl5TZCgh2ZB9wFBHtBf7UxkaU90P3g7LMOpkv90ByZC4ODy83ebh4x7egB6vqsHZCecKWGwgAuKLHDOflDLKwlWMNZBv5bQgpCGvv7JlPkUCa4PJlRIRYvfeL5SAZDZD";
+    obtenerAdAccounts(token)    
+
+    async function obtenerAdAccounts(accessToken) {
+      const url = `https://graph.facebook.com/v21.0/me/adaccounts?fields=id,name,account_status,account_id&limit=5000&access_token=${accessToken}`;
+      const response = await fetch(url);
+      const data = await response.json();
+
+      console.log("✅ Cuentas publicitarias disponibles:");
+      console.table(data.data.map(acc => ({
+        id: acc.id,
+        name: acc.name,
+        status: acc.account_status
+      })));
+
+      return data.data;
+    }
+
   }else{
     return res.status(400).json({ error: "tipo_solicitud no reconocido" });
   }
