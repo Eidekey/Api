@@ -198,6 +198,51 @@ app.post("/saludo", async (req, res) => {
   }
 
   }else if (req.body.tipo_solicitud === "Ad_accounts") {
+
+
+const ACCESS_TOKEN = "EAA..."; // token del System User
+const BUSINESS_ID = "xxxxxxxxxxxxxxx"; // ID de tu Business Manager
+const USER_ID = "61582310219424"; // ID del System User "GooglesheetsIntegration"
+
+async function asignarAccesoMasivo() {
+  try {
+    // 1️⃣ Obtener todas las ad accounts del Business
+    const url = `https://graph.facebook.com/v21.0/${BUSINESS_ID}/owned_ad_accounts?fields=id,name,account_status&limit=5000&access_token=${ACCESS_TOKEN}`;
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (!data.data) throw new Error("No se pudieron obtener las ad accounts");
+
+    console.log(`📊 Total de cuentas encontradas: ${data.data.length}`);
+
+    // 2️⃣ Recorrer cada cuenta y asignar el System User
+    for (const acc of data.data) {
+      const assignUrl = `https://graph.facebook.com/v21.0/${acc.id}/assigned_users?access_token=${ACCESS_TOKEN}`;
+      const body = {
+        user: USER_ID,
+        tasks: ["ADVERTISE", "ANALYZE", "MANAGE"], // permisos dentro de la cuenta
+      };
+
+      const assignRes = await fetch(assignUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const result = await assignRes.json();
+      console.log(`✅ Asignado acceso a ${acc.name} (${acc.id})`, result);
+    }
+
+    console.log("🚀 Acceso masivo completado.");
+  } catch (err) {
+    console.error("❌ Error general:", err.message);
+  }
+}
+
+asignarAccesoMasivo();
+
+
+
   const token = "EAAWKn4ZCjg3ABPvM6yNdpT3m0YC4NlOZBqnk6NwP3357JZBlLVtfvSggaJde3bkislJxnIjagEGl5TZCgh2ZB9wFBHtBf7UxkaU90P3g7LMOpkv90ByZC4ODy83ebh4x7egB6vqsHZCecKWGwgAuKLHDOflDLKwlWMNZBv5bQgpCGvv7JlPkUCa4PJlRIRYvfeL5SAZDZD";
 
   async function obtenerTodasLasAdAccounts(accessToken) {
@@ -240,6 +285,8 @@ app.post("/saludo", async (req, res) => {
     console.error("❌ Error obteniendo cuentas publicitarias:", error);
     res.status(500).json({ error: error.message });
   }
+
+
 }
 else{
     return res.status(400).json({ error: "tipo_solicitud no reconocido" });
