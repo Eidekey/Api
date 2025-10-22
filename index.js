@@ -200,8 +200,8 @@ app.post("/saludo", async (req, res) => {
   }else if (req.body.tipo_solicitud === "Ad_accounts") {
 
 
-const ACCESS_TOKEN = "EAA..."; // token del System User
-const BUSINESS_ID = "xxxxxxxxxxxxxxx"; // ID de tu Business Manager
+const ACCESS_TOKEN = "EAAWKn4ZCjg3ABPvM6yNdpT3m0YC4NlOZBqnk6NwP3357JZBlLVtfvSggaJde3bkislJxnIjagEGl5TZCgh2ZB9wFBHtBf7UxkaU90P3g7LMOpkv90ByZC4ODy83ebh4x7egB6vqsHZCecKWGwgAuKLHDOflDLKwlWMNZBv5bQgpCGvv7JlPkUCa4PJlRIRYvfeL5SAZDZD"; // token del System User
+const BUSINESS_ID = "2198026353809252"; // ID de tu Business Manager
 const USER_ID = "61582310219424"; // ID del System User "GooglesheetsIntegration"
 
 async function asignarAccesoMasivo() {
