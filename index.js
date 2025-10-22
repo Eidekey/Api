@@ -200,7 +200,7 @@ app.post("/saludo", async (req, res) => {
   }else if(req.body.tipo_solicitud == "Ad_accounts"){
 
     const token = "EAAWKn4ZCjg3ABPvM6yNdpT3m0YC4NlOZBqnk6NwP3357JZBlLVtfvSggaJde3bkislJxnIjagEGl5TZCgh2ZB9wFBHtBf7UxkaU90P3g7LMOpkv90ByZC4ODy83ebh4x7egB6vqsHZCecKWGwgAuKLHDOflDLKwlWMNZBv5bQgpCGvv7JlPkUCa4PJlRIRYvfeL5SAZDZD";
-    obtenerAdAccounts(token)    
+    res = obtenerAdAccounts(token)    
 
     async function obtenerAdAccounts(accessToken) {
       const url = `https://graph.facebook.com/v21.0/me/adaccounts?fields=id,name,account_status,account_id&limit=5000&access_token=${accessToken}`;
