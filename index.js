@@ -197,42 +197,51 @@ app.post("/saludo", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 
-  }else if(req.body.tipo_solicitud == "Ad_accounts"){
+  }else if (req.body.tipo_solicitud === "Ad_accounts") {
+  const token = "EAAWKn4ZCjg3ABPvM6yNdpT3m0YC4NlOZBqnk6NwP3357JZBlLVtfvSggaJde3bkislJxnIjagEGl5TZCgh2ZB9wFBHtBf7UxkaU90P3g7LMOpkv90ByZC4ODy83ebh4x7egB6vqsHZCecKWGwgAuKLHDOflDLKwlWMNZBv5bQgpCGvv7JlPkUCa4PJlRIRYvfeL5SAZDZD";
 
-    
-    const token = "EAAWKn4ZCjg3ABPvM6yNdpT3m0YC4NlOZBqnk6NwP3357JZBlLVtfvSggaJde3bkislJxnIjagEGl5TZCgh2ZB9wFBHtBf7UxkaU90P3g7LMOpkv90ByZC4ODy83ebh4x7egB6vqsHZCecKWGwgAuKLHDOflDLKwlWMNZBv5bQgpCGvv7JlPkUCa4PJlRIRYvfeL5SAZDZD";
+  async function obtenerTodasLasAdAccounts(accessToken) {
+    let url = `https://graph.facebook.com/v21.0/me/adaccounts?fields=id,name,account_status,account_id&limit=500`;
+    let todas = [];
 
-    async function obtenerAdAccounts(accessToken) {
-      const url = `https://graph.facebook.com/v21.0/me/adaccounts?fields=id,name,account_status,account_id&limit=5000&access_token=${accessToken}`;
-      const response = await fetch(url);
+    while (url) {
+      const response = await fetch(`${url}&access_token=${accessToken}`);
       const data = await response.json();
 
-      console.log("✅ Cuentas publicitarias disponibles:");
-      console.table(
-        data.data.map((acc) => ({
-          id: acc.id,
-          name: acc.name,
-          status: acc.account_status,
-        }))
-      );
+      if (data.error) {
+        throw new Error(data.error.message);
+      }
 
-      return data.data;
+      todas.push(...(data.data || []));
+      url = data.paging?.next || null; // siguiente página, si existe
+
+      console.log(`📄 Cargadas ${todas.length} cuentas hasta ahora...`);
     }
 
-    try {
-      const accounts = await obtenerAdAccounts(token);
-      res.json({
-        total: accounts.length,
-        cuentas: accounts,
-      });
-    } catch (error) {
-      console.error("❌ Error obteniendo cuentas publicitarias:", error);
-      res.status(500).json({ error: error.message });
-    }
-  
+    console.log(`✅ Total final de cuentas: ${todas.length}`);
+    return todas;
+  }
 
+  try {
+    const cuentas = await obtenerTodasLasAdAccounts(token);
+    console.table(
+      cuentas.map((c) => ({
+        id: c.id,
+        name: c.name,
+        status: c.account_status,
+      }))
+    );
 
-  }else{
+    res.json({
+      total: cuentas.length,
+      cuentas,
+    });
+  } catch (error) {
+    console.error("❌ Error obteniendo cuentas publicitarias:", error);
+    res.status(500).json({ error: error.message });
+  }
+}
+else{
     return res.status(400).json({ error: "tipo_solicitud no reconocido" });
   }
 
