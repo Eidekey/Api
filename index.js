@@ -257,6 +257,16 @@ app.post("/saludo", async (req, res) => {
 
         const batchData = await resp.json();
 
+        // Test de una cuenta específica
+        const testAccount = allAccounts[0]?.id;
+        if (testAccount) {
+          const testUrl = `https://graph.facebook.com/v21.0/act_${testAccount}/insights?fields=account_id,account_name,impressions,reach,spend,date_start,date_stop&time_range[since]=${since}&time_range[until]=${until}&level=account&access_token=${token}`;
+          const testResp = await fetch(testUrl);
+          const testData = await testResp.json();
+          console.log("🔍 Test insights 1 cuenta:", testData);
+        }
+
+
         batchData.forEach((r) => {
           if (r?.body) {
             const parsed = JSON.parse(r.body);
