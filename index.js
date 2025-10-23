@@ -197,53 +197,109 @@ app.post("/saludo", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 
-  }else if (req.body.tipo_solicitud === "Ad_accounts") {
+  } else if (req.body.tipo_solicitud === "Ad_accounts") {
 
-  const token = "EAAWKn4ZCjg3ABPvM6yNdpT3m0YC4NlOZBqnk6NwP3357JZBlLVtfvSggaJde3bkislJxnIjagEGl5TZCgh2ZB9wFBHtBf7UxkaU90P3g7LMOpkv90ByZC4ODy83ebh4x7egB6vqsHZCecKWGwgAuKLHDOflDLKwlWMNZBv5bQgpCGvv7JlPkUCa4PJlRIRYvfeL5SAZDZD";
+    const token = "EAAWKn4ZCjg3ABPvM6yNdpT3m0YC4NlOZBqnk6NwP3357JZBlLVtfvSggaJde3bkislJxnIjagEGl5TZCgh2ZB9wFBHtBf7UxkaU90P3g7LMOpkv90ByZC4ODy83ebh4x7egB6vqsHZCecKWGwgAuKLHDOflDLKwlWMNZBv5bQgpCGvv7JlPkUCa4PJlRIRYvfeL5SAZDZD";
 
-  async function obtenerTodasLasAdAccounts(accessToken) {
-    let url = `https://graph.facebook.com/v21.0/me/adaccounts?fields=id,name,account_status,account_id&limit=500`;
-    let todas = [];
+    try {
+      // =========================
+      // 1️⃣ Obtener todas las Ad Accounts
+      // =========================
+      let allAccounts = [];
+      let nextUrl = `https://graph.facebook.com/v21.0/me/adaccounts?fields=id,name&limit=5000&access_token=${token}`;
 
-    while (url) {
-      const response = await fetch(`${url}&access_token=${accessToken}`);
-      const data = await response.json();
-
-      if (data.error) {
-        throw new Error(data.error.message);
+      while (nextUrl) {
+        const resp = await fetch(nextUrl);
+        const data = await resp.json();
+        if (data.data) allAccounts = allAccounts.concat(data.data);
+        nextUrl = data.paging?.next || null;
       }
 
-      todas.push(...(data.data || []));
-      url = data.paging?.next || null; // siguiente página, si existe
+      console.log(`✅ Total de cuentas encontradas: ${allAccounts.length}`);
 
-      console.log(`📄 Cargadas ${todas.length} cuentas hasta ahora...`);
+      // =========================
+      // 2️⃣ Dividir en bloques de 50
+      // =========================
+      const chunkSize = 50;
+      const chunks = [];
+      for (let i = 0; i < allAccounts.length; i += chunkSize) {
+        chunks.push(allAccounts.slice(i, i + chunkSize));
+      }
+
+      // =========================
+      // 3️⃣ Fechas últimos 15 días
+      // =========================
+      const end = new Date();
+      const start = new Date();
+      start.setDate(end.getDate() - 15);
+      const since = start.toISOString().split("T")[0];
+      const until = end.toISOString().split("T")[0];
+
+      console.log(`📆 Rango: ${since} → ${until}`);
+
+      // =========================
+      // 4️⃣ Ejecutar batch requests
+      // =========================
+      const results = [];
+
+      for (const chunk of chunks) {
+        const batch = chunk.map(acc => ({
+          method: "GET",
+          relative_url: `act_${acc.id}/insights?fields=account_id,account_name,impressions,reach,spend,date_start,date_stop&time_range[since]=${since}&time_range[until]=${until}&level=account`
+        }));
+
+        const batchUrl = `https://graph.facebook.com/v21.0/?access_token=${token}`;
+        const resp = await fetch(batchUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ batch })
+        });
+
+        const batchData = await resp.json();
+
+        batchData.forEach((r) => {
+          if (r?.body) {
+            const parsed = JSON.parse(r.body);
+            if (parsed.data && parsed.data.length > 0) {
+              const d = parsed.data[0];
+              results.push({
+                ad_account_id: d.account_id,
+                ad_account_name: d.account_name,
+                impressions: d.impressions,
+                reach: d.reach,
+                amount_spent: d.spend,
+                reporting_starts: d.date_start,
+                reporting_ends: d.date_stop,
+              });
+            }
+          }
+        });
+      }
+
+      // =========================
+      // 5️⃣ Filtrar solo con datos
+      // =========================
+      const validResults = results.filter(r => r.impressions && Number(r.impressions) > 0);
+
+      console.log(`📊 Cuentas con insights: ${validResults.length}`);
+
+      // =========================
+      // 6️⃣ Enviar respuesta final
+      // =========================
+      res.json({
+        total_con_insights: validResults.length,
+        resultados: validResults
+      });
+
+    } catch (error) {
+      console.error("❌ Error obteniendo insights de cuentas:", error);
+      res.status(500).json({ error: error.message });
     }
 
-    console.log(`✅ Total final de cuentas: ${todas.length}`);
-    return todas;
-  }
-
-  try {
-    const cuentas = await obtenerTodasLasAdAccounts(token);
-    console.table(
-      cuentas.map((c) => ({
-        id: c.id,
-        name: c.name,
-        status: c.account_status,
-      }))
-    );
-
-    res.json({
-      total: cuentas.length,
-      cuentas,
-    });
-  } catch (error) {
-    console.error("❌ Error obteniendo cuentas publicitarias:", error);
-    res.status(500).json({ error: error.message });
   }
 
 
-}
+
 else{
     return res.status(400).json({ error: "tipo_solicitud no reconocido" });
   }
