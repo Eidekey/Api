@@ -327,7 +327,7 @@ app.post("/saludo", async (req, res) => {
       const group = ad_accounts.slice(index, index + 50);
       const batch = group.map((ad_account) => ({
         method: "GET",
-        relative_url: `${account_id}?fields=name&access_token=${token}`,
+        relative_url: `${ad_account}?fields=name&access_token=${token}`,
       }));
       namesBatches.push(batch);
       index += 50;
