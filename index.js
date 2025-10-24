@@ -306,11 +306,65 @@ app.post("/saludo", async (req, res) => {
       res.status(500).json({ error: error.message });
     }
 
-  }
+  }else if(req.body.tipo_solicitud === "custom_filter"){
 
+    const token = "EAAWKn4ZCjg3ABPvM6yNdpT3m0YC4NlOZBqnk6NwP3357JZBlLVtfvSggaJde3bkislJxnIjagEGl5TZCgh2ZB9wFBHtBf7UxkaU90P3g7LMOpkv90ByZC4ODy83ebh4x7egB6vqsHZCecKWGwgAuKLHDOflDLKwlWMNZBv5bQgpCGvv7JlPkUCa4PJlRIRYvfeL5SAZDZD";
+    const ad_accounts = req.body?.ad_accounts ?? [];
+    const start_date = req.body.start_date
+    const end_date = req.body.end_date
 
+    if (!ad_accounts.length) {
+      return res.status(400).json({ error: "No se enviaron ad_accounts" });
+    }
 
-else{
+    const url_base = "https://graph.facebook.com/v23.0/";
+
+    const namesBatches = [];
+    let index = 0;
+
+    // Dividiendo cuentas en 50
+    while (index < ad_accounts.length) {
+      const group = ad_accounts.slice(index, index + 50);
+      const batch = group.map((ad_account) => ({
+        method: "GET",
+        relative_url: `${account_id}?fields=name&access_token=${token}`,
+      }));
+      namesBatches.push(batch);
+      index += 50;
+    }
+
+    const namesResponses = await Promise.all(
+      namesBatches.map(async (batch, i) => {
+        const response = await fetch(url_base, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ access_token: token, batch }),
+        });
+
+        const data = await response.json();
+        return data;
+      })
+    );
+    console.log("Names responses: "+ namesResponses);
+    res.json(namesResponses)
+
+    // ======== Obtener nombres de las cuentas ========
+    // console.log("📡 Obteniendo nombres de las ad accounts...");
+    // const accountNames = {};
+
+    // await Promise.all(
+    //   ad_accounts.map(async (account_id) => {
+    //     try {
+    //       const resp = await fetch(`${url_base}${account_id}?fields=name&access_token=${token}`);
+    //       const data = await resp.json();
+    //       accountNames[account_id] = data.name || "Sin nombre";
+    //     } catch {
+    //       accountNames[account_id] = "Desconocido";
+    //     }
+    //   })
+    // );
+
+  }else{
     return res.status(400).json({ error: "tipo_solicitud no reconocido" });
   }
 
