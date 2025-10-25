@@ -374,7 +374,8 @@ app.post("/saludo", async (req, res) => {
         return data;
       })
     );
-    console.log(`campaignResponses: `+campaignResponses);
+    let campaignResponsesMap = campaignResponses[0].map((response) => JSON.parse(response.body))
+    console.log("Names responses: "+ campaignResponsesMap.length);
     
     res.json(campaignResponses)
     // ======== Obtener nombres de las cuentas ========
