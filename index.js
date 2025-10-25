@@ -345,7 +345,7 @@ app.post("/saludo", async (req, res) => {
         return data;
       })
     );
-    let namesResponsesMap = namesResponses[0].map((response) => response.body)
+    let namesResponsesMap = namesResponses[0].map((response) => JSON.parse(response.body))
     console.log("Names responses: "+ namesResponsesMap);
     res.json(namesResponsesMap)
 
