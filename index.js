@@ -322,7 +322,7 @@ app.post("/saludo", async (req, res) => {
     const namesBatches = [];
     let index = 0;
 
-    // Dividiendo cuentas en 50
+    // Dividiendo cuentas en 50 y obteniendo el nombre del ad account
     while (index < ad_accounts.length) {
       const group = ad_accounts.slice(index, index + 50);
       const batch = group.map((ad_account) => ({
@@ -334,7 +334,7 @@ app.post("/saludo", async (req, res) => {
     }
 
     const namesResponses = await Promise.all(
-      namesBatches.map(async (batch, i) => {
+      namesBatches.map(async (batch) => {
         const response = await fetch(url_base, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -347,8 +347,36 @@ app.post("/saludo", async (req, res) => {
     );
     let namesResponsesMap = namesResponses[0].map((response) => JSON.parse(response.body))
     console.log("Names responses: "+ namesResponsesMap);
-    res.json(namesResponsesMap)
-
+    
+    // Dividiendo cuentas en 50 y obteniendo los insights
+    const campaignBatches = [];
+    index = 0;
+    
+    while (index < ad_accounts.length) {
+      const group = ad_accounts.slice(index, index + 50);
+      const batch = group.map((ad_account) => ({
+        method: "GET",
+        relative_url: `${ad_account}/campaigns?fields=id,name,effective_status,daily_budget,created_time&filtering=[{'field':'effective_status','operator':'IN','value':['ACTIVE']}]&limit=1000`,
+      }));
+      campaignBatches.push(batch);
+      index += 50;
+    }
+    
+    const campaignResponses = await Promise.all(
+      campaignBatches.map(async (batch, i) => {
+        const response = await fetch(url_base, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ access_token: token, batch }),
+        });
+        
+        const data = await response.json();
+        return data;
+      })
+    );
+    console.log(`campaignResponses: `+campaignResponses);
+    
+    res.json(campaignResponses)
     // ======== Obtener nombres de las cuentas ========
     // console.log("📡 Obteniendo nombres de las ad accounts...");
     // const accountNames = {};
