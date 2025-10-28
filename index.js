@@ -524,156 +524,137 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
     console.error("❌ Error general:", err);
     res.status(500).json({ error: err.message });
   }
-}else if (req.body.tipo_solicitud === "ads_errors") {
+}else if (req.body.tipo_solicitud == "ads_errors") {
+  const token = "EAAWKn4ZCjg3ABPvM6yNdpT3m0YC4NlOZBqnk6NwP3357JZBlLVtfvSggaJde3bkislJxnIjagEGl5TZCgh2ZB9wFBHtBf7UxkaU90P3g7LMOpkv90ByZC4ODy83ebh4x7egB6vqsHZCecKWGwgAuKLHDOflDLKwlWMNZBv5bQgpCGvv7JlPkUCa4PJlRIRYvfeL5SAZDZD";
+  const ad_accounts = req.body?.ad_accounts ?? [];
+  const url_base = "https://graph.facebook.com/v21.0";
+
+  if (!ad_accounts.length) {
+    return res.status(400).json({ error: "No se enviaron ad_accounts" });
+  }
+
+  console.log(`📊 Revisando ${ad_accounts.length} cuentas publicitarias...`);
+
   try {
-    const token = "EAAWKn4ZCjg3ABPvM6yNdpT3m0YC4NlOZBqnk6NwP3357JZBlLVtfvSggaJde3bkislJxnIjagEGl5TZCgh2ZB9wFBHtBf7UxkaU90P3g7LMOpkv90ByZC4ODy83ebh4x7egB6vqsHZCecKWGwgAuKLHDOflDLKwlWMNZBv5bQgpCGvv7JlPkUCa4PJlRIRYvfeL5SAZDZD";
-    const ad_accounts = req.body?.ad_accounts ?? [];
-
-    if (!ad_accounts.length) {
-      return res.status(400).json({ error: "No se enviaron ad_accounts" });
-    }
-
-    console.log("🧠 Revisando ads activos con errores en:", ad_accounts.length, "cuentas");
-
-    const url_base = "https://graph.facebook.com/v23.0/";
-    const accountNames = {};
-
-    // ======== Obtener nombres de cuentas ========
-    let nameIndex = 0;
-    const nameBatches = [];
-    while (nameIndex < ad_accounts.length) {
-      const group = ad_accounts.slice(nameIndex, nameIndex + 50);
-      const batch = group.map(acc => ({
+    // ======== Obtener campañas activas por batch ========
+    let index = 0;
+    const campaignBatches = [];
+    while (index < ad_accounts.length) {
+      const group = ad_accounts.slice(index, index + 50);
+      const batch = group.map((accId) => ({
         method: "GET",
-        relative_url: `${acc}?fields=name`
+        relative_url: `act_${accId}/campaigns?fields=id,name,status&limit=1000`
       }));
-      nameBatches.push(batch);
-      nameIndex += 50;
+      campaignBatches.push(batch);
+      index += 50;
     }
 
-    await Promise.all(
-      nameBatches.map(async (batch, i) => {
-        const resBatch = await fetch(url_base, {
+    const campaignResponses = await Promise.all(
+      campaignBatches.map(async (batch, i) => {
+        const response = await fetch(url_base, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ access_token: token, batch })
         });
-        const data = await resBatch.json();
-        data.forEach((item, idx) => {
-          try {
-            const body = JSON.parse(item.body);
-            const accId = batch[idx].relative_url.replace("?fields=name", "");
-            accountNames[accId] = body.name || "Sin nombre";
-          } catch {
-            const accId = batch[idx].relative_url.replace("?fields=name", "");
-            accountNames[accId] = "Desconocido";
-          }
-        });
-      })
-    );
-
-    console.log("✅ Nombres obtenidos.");
-
-    // ======== Obtener ADS activos ========
-    const adBatches = [];
-    let adIndex = 0;
-
-    while (adIndex < ad_accounts.length) {
-      const group = ad_accounts.slice(adIndex, adIndex + 50);
-      const batch = group.map(acc => ({
-        method: "GET",
-        relative_url: `${acc}/ads?fields=id,name,adset_id,campaign_id,effective_status,configured_status,delivery_info,issues_info,ad_review_feedback,recommendations,updated_time&filtering=[{'field':'effective_status','operator':'IN','value':['ACTIVE']}]&limit=500`
-      }));
-      adBatches.push(batch);
-      adIndex += 50;
-    }
-
-    console.log(`📦 Total lotes de anuncios: ${adBatches.length}`);
-
-    const adResponses = await Promise.all(
-      adBatches.map(async (batch, i) => {
-        const resp = await fetch(url_base, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ access_token: token, batch })
-        });
-        const data = await resp.json();
-        console.log(`✅ Batch de ads ${i + 1} procesado (${batch.length} cuentas)`);
+        const data = await response.json();
+        console.log(`✅ Lote ${i + 1} de campañas procesado (${batch.length} cuentas)`);
         return data;
       })
     );
 
-    // ======== Procesar y filtrar errores ========
-    const allAds = adResponses
-      .flatMap((batch, batchIdx) =>
-        batch
-          .map((item, idx) => {
-            try {
-              const body = JSON.parse(item.body);
-              const adAccount = ad_accounts[batchIdx * 50 + idx] || "unknown";
-              const ads = body.data ?? [];
-              return ads.map(ad => ({
-                ...ad,
-                ad_account_id: adAccount,
-                account_name: accountNames[adAccount] || "Sin nombre",
-              }));
-            } catch (err) {
-              console.log("⚠️ Error parseando batch:", err.message);
-              return [];
-            }
-          })
-          .flat()
-      )
+    // ======== Consolidar campañas activas ========
+    const allCampaigns = campaignResponses
+      .flat()
+      .map((item) => {
+        try {
+          const body = JSON.parse(item.body);
+          return (body.data || []).filter((c) => c.status === "ACTIVE");
+        } catch {
+          return [];
+        }
+      })
       .flat();
 
-    console.log(`📊 Total de ads activos encontrados: ${allAds.length}`);
+    console.log(`📈 Total campañas activas encontradas: ${allCampaigns.length}`);
 
-    // ========= LOG: Ver un ejemplo de ad ========
-    if (allAds.length > 0) {
-      console.log("🔍 Ejemplo de ad devuelto por la API:", JSON.stringify(allAds[0], null, 2));
+    // ======== Obtener anuncios con posibles errores ========
+    const campaignIds = allCampaigns.map((c) => c.id);
+    const adBatches = [];
+    let idx = 0;
+
+    while (idx < campaignIds.length) {
+      const group = campaignIds.slice(idx, idx + 50);
+      const batch = group.map((cid) => ({
+        method: "GET",
+        relative_url: `${cid}/ads?fields=id,name,effective_status,issues_info,ad_review_feedback`
+      }));
+      adBatches.push(batch);
+      idx += 50;
     }
 
-    // ========= Detectar errores =========
-    const adsConErrores = allAds.filter(ad => {
-      const hasIssues = ad.issues_info && ad.issues_info.length > 0;
-      const hasDeliveryIssues = ad.delivery_info?.issues?.length > 0;
-      const hasRecommendations = ad.recommendations && ad.recommendations.length > 0;
-      const hasPolicyRejection =
-        ad.ad_review_feedback &&
-        (ad.ad_review_feedback.global || ad.ad_review_feedback.recommendation_status === "REJECTED");
+    const adResponses = await Promise.all(
+      adBatches.map(async (batch, i) => {
+        const response = await fetch(url_base, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ access_token: token, batch })
+        });
+        const data = await response.json();
+        console.log(`📦 Lote ${i + 1} de ads procesado (${batch.length} campañas)`);
+        return data;
+      })
+    );
 
-      return hasIssues || hasDeliveryIssues || hasRecommendations || hasPolicyRejection;
+    // ======== Filtrar ads con errores ========
+    const allAds = adResponses
+      .flat()
+      .map((item, batchIdx) => {
+        try {
+          const body = JSON.parse(item.body);
+          const campaignId = adBatches[Math.floor(batchIdx / 50)]?.[batchIdx % 50]?.relative_url.split("/")[0];
+          return (body.data || []).map((ad) => ({
+            ...ad,
+            campaign_id: campaignId
+          }));
+        } catch {
+          return [];
+        }
+      })
+      .flat();
+
+    console.log(`📊 Total ads revisados: ${allAds.length}`);
+
+    const adsWithErrors = allAds.filter((ad) => {
+      const hasIssues =
+        (ad.issues_info && ad.issues_info.length > 0) ||
+        (ad.ad_review_feedback && Object.keys(ad.ad_review_feedback).length > 0) ||
+        (ad.effective_status && ad.effective_status.includes("DISAPPROVED"));
+      return hasIssues;
     });
 
-    console.log(`⚠️ Total de anuncios con errores: ${adsConErrores.length}`);
+    console.log(`⚠️ Total ads con errores: ${adsWithErrors.length}`);
 
-    const resultadoFinal = adsConErrores.map(ad => ({
-      ad_account_id: ad.ad_account_id,
-      account_name: ad.account_name,
+    // ======== Agregar nombres de campaña ========
+    const campaignMap = new Map(allCampaigns.map((c) => [c.id, c.name]));
+    const finalResult = adsWithErrors.map((ad) => ({
       ad_id: ad.id,
       ad_name: ad.name,
       campaign_id: ad.campaign_id,
-      adset_id: ad.adset_id,
+      campaign_name: campaignMap.get(ad.campaign_id) || "Desconocida",
       effective_status: ad.effective_status,
-      configured_status: ad.configured_status,
-      updated_time: ad.updated_time,
       issues_info: ad.issues_info ?? [],
-      delivery_info: ad.delivery_info ?? {},
-      recommendations: ad.recommendations ?? [],
-      ad_review_feedback: ad.ad_review_feedback ?? {},
+      ad_review_feedback: ad.ad_review_feedback ?? {}
     }));
 
     res.json({
-      total_ads_con_errores: resultadoFinal.length,
-      resultados: resultadoFinal,
+      total_ads_con_errores: finalResult.length,
+      resultados: finalResult
     });
-
   } catch (err) {
-    console.error("❌ Error en ads_errors:", err);
+    console.error("❌ Error general:", err);
     res.status(500).json({ error: err.message });
   }
 }
-
 
 else{
     return res.status(400).json({ error: "tipo_solicitud no reconocido" });
