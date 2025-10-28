@@ -543,7 +543,7 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
       const group = ad_accounts.slice(index, index + 50);
       const batch = group.map((accId) => ({
         method: "GET",
-        relative_url: `act_${accId}/campaigns?fields=id,name,status&limit=1000`
+        relative_url: `${accId}/campaigns?fields=id,name,status&limit=1000`
       }));
       campaignBatches.push(batch);
       index += 50;
