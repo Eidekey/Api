@@ -40,23 +40,51 @@ app.post("/saludo", async (req, res) => {
 
     const url_base = "https://graph.facebook.com/v23.0/";
 
-    // ======== Obtener nombres de las cuentas ========
-    console.log("📡 Obteniendo nombres de las ad accounts...");
-    const accountNames = {};
+    // ======== Obtener nombres de las cuentas (optimizado en batch) ========
+console.log("📡 Obteniendo nombres de las ad accounts (batch)...");
 
-    await Promise.all(
-      ad_accounts.map(async (account_id) => {
-        try {
-          const resp = await fetch(`${url_base}${account_id}?fields=name&access_token=${token}`);
-          const data = await resp.json();
-          accountNames[account_id] = data.name || "Sin nombre";
-        } catch {
-          accountNames[account_id] = "Desconocido";
-        }
-      })
-    );
+const accountNames = {};
+let index2 = 0;
+const nameBatches = [];
 
-    console.log("✅ Nombres de ad accounts obtenidos.");
+// Dividir en bloques de hasta 50 cuentas
+while (index2 < ad_accounts.length) {
+  const group = ad_accounts.slice(index2, index2 + 50);
+  const batch = group.map((account_id) => ({
+    method: "GET",
+    relative_url: `${account_id}?fields=name`,
+  }));
+  nameBatches.push(batch);
+  index2 += 50;
+}
+
+// Ejecutar los lotes en paralelo con promesas
+const nameResponses = await Promise.all(
+  nameBatches.map(async (batch, i) => {
+    const response = await fetch(url_base, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ access_token: token, batch }),
+    });
+
+    const data = await response.json();
+    console.log(`✅ Lote de nombres ${i + 1} procesado (${batch.length} cuentas)`);
+
+    data.forEach((item, idx) => {
+      try {
+        const body = JSON.parse(item.body);
+        const accId = nameBatches[i][idx].relative_url.replace("?fields=name", "");
+        accountNames[accId] = body.name || "Sin nombre";
+      } catch {
+        const accId = nameBatches[i][idx].relative_url.replace("?fields=name", "");
+        accountNames[accId] = "Desconocido";
+      }
+    });
+  })
+);
+
+console.log("✅ Nombres de ad accounts obtenidos (batch).");
+
 
     // ======== Llamada: Campañas ========
     const campaignBatches = [];
