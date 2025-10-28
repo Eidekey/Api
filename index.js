@@ -524,142 +524,156 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
     console.error("❌ Error general:", err);
     res.status(500).json({ error: err.message });
   }
-}  else if (req.body.tipo_solicitud === "ads_errors") {
-    try {
-      const token = "EAAWKn4ZCjg3ABPvM6yNdpT3m0YC4NlOZBqnk6NwP3357JZBlLVtfvSggaJde3bkislJxnIjagEGl5TZCgh2ZB9wFBHtBf7UxkaU90P3g7LMOpkv90ByZC4ODy83ebh4x7egB6vqsHZCecKWGwgAuKLHDOflDLKwlWMNZBv5bQgpCGvv7JlPkUCa4PJlRIRYvfeL5SAZDZD";
-      const ad_accounts = req.body?.ad_accounts ?? [];
+}else if (req.body.tipo_solicitud === "ads_errors") {
+  try {
+    const token = "EAAWKn4ZCjg3ABPvM6yNdpT3m0YC4NlOZBqnk6NwP3357JZBlLVtfvSggaJde3bkislJxnIjagEGl5TZCgh2ZB9wFBHtBf7UxkaU90P3g7LMOpkv90ByZC4ODy83ebh4x7egB6vqsHZCecKWGwgAuKLHDOflDLKwlWMNZBv5bQgpCGvv7JlPkUCa4PJlRIRYvfeL5SAZDZD";
+    const ad_accounts = req.body?.ad_accounts ?? [];
 
-      if (!ad_accounts.length) {
-        return res.status(400).json({ error: "No se enviaron ad_accounts" });
-      }
+    if (!ad_accounts.length) {
+      return res.status(400).json({ error: "No se enviaron ad_accounts" });
+    }
 
-      console.log("🧠 Revisando ads activos con errores en:", ad_accounts.length, "cuentas");
+    console.log("🧠 Revisando ads activos con errores en:", ad_accounts.length, "cuentas");
 
-      const url_base = "https://graph.facebook.com/v23.0/";
-      const accountNames = {};
+    const url_base = "https://graph.facebook.com/v23.0/";
+    const accountNames = {};
 
-      // ======== Obtener nombres de cuentas ========
-      let nameIndex = 0;
-      const nameBatches = [];
-      while (nameIndex < ad_accounts.length) {
-        const group = ad_accounts.slice(nameIndex, nameIndex + 50);
-        const batch = group.map(acc => ({
-          method: "GET",
-          relative_url: `${acc}?fields=name`
-        }));
-        nameBatches.push(batch);
-        nameIndex += 50;
-      }
+    // ======== Obtener nombres de cuentas ========
+    let nameIndex = 0;
+    const nameBatches = [];
+    while (nameIndex < ad_accounts.length) {
+      const group = ad_accounts.slice(nameIndex, nameIndex + 50);
+      const batch = group.map(acc => ({
+        method: "GET",
+        relative_url: `${acc}?fields=name`
+      }));
+      nameBatches.push(batch);
+      nameIndex += 50;
+    }
 
-      await Promise.all(
-        nameBatches.map(async (batch, i) => {
-          const resBatch = await fetch(url_base, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ access_token: token, batch })
-          });
-          const data = await resBatch.json();
-          data.forEach((item, idx) => {
+    await Promise.all(
+      nameBatches.map(async (batch, i) => {
+        const resBatch = await fetch(url_base, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ access_token: token, batch })
+        });
+        const data = await resBatch.json();
+        data.forEach((item, idx) => {
+          try {
+            const body = JSON.parse(item.body);
+            const accId = batch[idx].relative_url.replace("?fields=name", "");
+            accountNames[accId] = body.name || "Sin nombre";
+          } catch {
+            const accId = batch[idx].relative_url.replace("?fields=name", "");
+            accountNames[accId] = "Desconocido";
+          }
+        });
+      })
+    );
+
+    console.log("✅ Nombres obtenidos.");
+
+    // ======== Obtener ADS activos ========
+    const adBatches = [];
+    let adIndex = 0;
+
+    while (adIndex < ad_accounts.length) {
+      const group = ad_accounts.slice(adIndex, adIndex + 50);
+      const batch = group.map(acc => ({
+        method: "GET",
+        relative_url: `${acc}/ads?fields=id,name,adset_id,campaign_id,effective_status,configured_status,delivery_info,issues_info,ad_review_feedback,recommendations,updated_time&filtering=[{'field':'effective_status','operator':'IN','value':['ACTIVE']}]&limit=500`
+      }));
+      adBatches.push(batch);
+      adIndex += 50;
+    }
+
+    console.log(`📦 Total lotes de anuncios: ${adBatches.length}`);
+
+    const adResponses = await Promise.all(
+      adBatches.map(async (batch, i) => {
+        const resp = await fetch(url_base, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ access_token: token, batch })
+        });
+        const data = await resp.json();
+        console.log(`✅ Batch de ads ${i + 1} procesado (${batch.length} cuentas)`);
+        return data;
+      })
+    );
+
+    // ======== Procesar y filtrar errores ========
+    const allAds = adResponses
+      .flatMap((batch, batchIdx) =>
+        batch
+          .map((item, idx) => {
             try {
               const body = JSON.parse(item.body);
-              const accId = batch[idx].relative_url.replace("?fields=name", "");
-              accountNames[accId] = body.name || "Sin nombre";
-            } catch {
-              const accId = batch[idx].relative_url.replace("?fields=name", "");
-              accountNames[accId] = "Desconocido";
+              const adAccount = ad_accounts[batchIdx * 50 + idx] || "unknown";
+              const ads = body.data ?? [];
+              return ads.map(ad => ({
+                ...ad,
+                ad_account_id: adAccount,
+                account_name: accountNames[adAccount] || "Sin nombre",
+              }));
+            } catch (err) {
+              console.log("⚠️ Error parseando batch:", err.message);
+              return [];
             }
-          });
-        })
-      );
+          })
+          .flat()
+      )
+      .flat();
 
-      console.log("✅ Nombres obtenidos.");
+    console.log(`📊 Total de ads activos encontrados: ${allAds.length}`);
 
-      // ======== Obtener ADS activos ========
-      const adBatches = [];
-      let adIndex = 0;
-
-      while (adIndex < ad_accounts.length) {
-        const group = ad_accounts.slice(adIndex, adIndex + 50);
-        const batch = group.map(acc => ({
-          method: "GET",
-          relative_url: `${acc}/ads?fields=id,name,adset_id,campaign_id,effective_status,delivery_info,issues_info,creative,updated_time&filtering=[{'field':'effective_status','operator':'IN','value':['ACTIVE']}]&limit=500`
-        }));
-        adBatches.push(batch);
-        adIndex += 50;
-      }
-
-      console.log(`📦 Total lotes de anuncios: ${adBatches.length}`);
-
-      const adResponses = await Promise.all(
-        adBatches.map(async (batch, i) => {
-          const resp = await fetch(url_base, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ access_token: token, batch })
-          });
-          const data = await resp.json();
-          console.log(`✅ Batch de ads ${i + 1} procesado`);
-          return data;
-        })
-      );
-
-      // ======== Procesar y filtrar errores ========
-      const allAds = adResponses
-        .flatMap((batch, batchIdx) =>
-          batch
-            .map((item, idx) => {
-              try {
-                const body = JSON.parse(item.body);
-                const adAccount = ad_accounts[batchIdx * 50 + idx] || "unknown";
-                const ads = body.data ?? [];
-                return ads.map(ad => ({
-                  ...ad,
-                  ad_account_id: adAccount,
-                  account_name: accountNames[adAccount] || "Sin nombre"
-                }));
-              } catch {
-                return [];
-              }
-            })
-            .flat()
-        )
-        .flat();
-
-      console.log(`📊 Total de ads activos encontrados: ${allAds.length}`);
-
-      // Detectar errores
-      const adsConErrores = allAds.filter(ad => {
-        // Algunos campos posibles: delivery_info, issues_info, o si hay policy rejections
-        const issues = ad.issues_info?.length || 0;
-        const deliveryProblems = ad.delivery_info?.issues?.length || 0;
-        return issues > 0 || deliveryProblems > 0;
-      });
-
-      console.log(`⚠️ Total de anuncios con errores: ${adsConErrores.length}`);
-
-      const resultadoFinal = adsConErrores.map(ad => ({
-        ad_account_id: ad.ad_account_id,
-        account_name: ad.account_name,
-        ad_id: ad.id,
-        ad_name: ad.name,
-        campaign_id: ad.campaign_id,
-        adset_id: ad.adset_id,
-        effective_status: ad.effective_status,
-        updated_time: ad.updated_time,
-        issues_info: ad.issues_info ?? [],
-        delivery_info: ad.delivery_info ?? {},
-      }));
-
-      res.json({
-        total_ads_con_errores: resultadoFinal.length,
-        resultados: resultadoFinal,
-      });
-
-    } catch (err) {
-      console.error("❌ Error en ads_errors:", err);
-      res.status(500).json({ error: err.message });
+    // ========= LOG: Ver un ejemplo de ad ========
+    if (allAds.length > 0) {
+      console.log("🔍 Ejemplo de ad devuelto por la API:", JSON.stringify(allAds[0], null, 2));
     }
+
+    // ========= Detectar errores =========
+    const adsConErrores = allAds.filter(ad => {
+      const hasIssues = ad.issues_info && ad.issues_info.length > 0;
+      const hasDeliveryIssues = ad.delivery_info?.issues?.length > 0;
+      const hasRecommendations = ad.recommendations && ad.recommendations.length > 0;
+      const hasPolicyRejection =
+        ad.ad_review_feedback &&
+        (ad.ad_review_feedback.global || ad.ad_review_feedback.recommendation_status === "REJECTED");
+
+      return hasIssues || hasDeliveryIssues || hasRecommendations || hasPolicyRejection;
+    });
+
+    console.log(`⚠️ Total de anuncios con errores: ${adsConErrores.length}`);
+
+    const resultadoFinal = adsConErrores.map(ad => ({
+      ad_account_id: ad.ad_account_id,
+      account_name: ad.account_name,
+      ad_id: ad.id,
+      ad_name: ad.name,
+      campaign_id: ad.campaign_id,
+      adset_id: ad.adset_id,
+      effective_status: ad.effective_status,
+      configured_status: ad.configured_status,
+      updated_time: ad.updated_time,
+      issues_info: ad.issues_info ?? [],
+      delivery_info: ad.delivery_info ?? {},
+      recommendations: ad.recommendations ?? [],
+      ad_review_feedback: ad.ad_review_feedback ?? {},
+    }));
+
+    res.json({
+      total_ads_con_errores: resultadoFinal.length,
+      resultados: resultadoFinal,
+    });
+
+  } catch (err) {
+    console.error("❌ Error en ads_errors:", err);
+    res.status(500).json({ error: err.message });
   }
+}
+
 
 else{
     return res.status(400).json({ error: "tipo_solicitud no reconocido" });
