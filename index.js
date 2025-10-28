@@ -334,35 +334,44 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
       res.status(500).json({ error: error.message });
     }
 
-  }else if(req.body.tipo_solicitud === "custom_filter"){
+  } else if (req.body.tipo_solicitud === "custom_filter") {
 
-    const token = "EAAWKn4ZCjg3ABPvM6yNdpT3m0YC4NlOZBqnk6NwP3357JZBlLVtfvSggaJde3bkislJxnIjagEGl5TZCgh2ZB9wFBHtBf7UxkaU90P3g7LMOpkv90ByZC4ODy83ebh4x7egB6vqsHZCecKWGwgAuKLHDOflDLKwlWMNZBv5bQgpCGvv7JlPkUCa4PJlRIRYvfeL5SAZDZD";
-    const ad_accounts = req.body?.ad_accounts ?? [];
-    const start_date = req.body.start_date
-    const end_date = req.body.end_date
+  const token = "EAAWKn4ZCjg3ABPvM6yNdpT3m0YC4NlOZBqnk6NwP3357JZBlLVtfvSggaJde3bkislJxnIjagEGl5TZCgh2ZB9wFBHtBf7UxkaU90P3g7LMOpkv90ByZC4ODy83ebh4x7egB6vqsHZCecKWGwgAuKLHDOflDLKwlWMNZBv5bQgpCGvv7JlPkUCa4PJlRIRYvfeL5SAZDZD";
+  const ad_accounts = req.body?.ad_accounts ?? [];
+  const start_date = req.body.start_date;
+  const end_date = req.body.end_date;
 
-    if (!ad_accounts.length) {
-      return res.status(400).json({ error: "No se enviaron ad_accounts" });
-    }
+  if (!ad_accounts.length) {
+    return res.status(400).json({ error: "No se enviaron ad_accounts" });
+  }
 
-    const url_base = "https://graph.facebook.com/v23.0/";
+  if (!start_date || !end_date) {
+    return res.status(400).json({ error: "Fechas no enviadas correctamente" });
+  }
 
-    const namesBatches = [];
+  const url_base = "https://graph.facebook.com/v23.0/";
+  console.log(`📅 Fechas recibidas: ${start_date} → ${end_date}`);
+
+  try {
+    // =========================
+    // 1️⃣ Obtener nombres de cuentas (batch)
+    // =========================
+    const accountNames = {};
     let index = 0;
+    const nameBatches = [];
 
-    // Dividiendo cuentas en 50 y obteniendo el nombre del ad account
     while (index < ad_accounts.length) {
       const group = ad_accounts.slice(index, index + 50);
-      const batch = group.map((ad_account) => ({
+      const batch = group.map((account_id) => ({
         method: "GET",
-        relative_url: `${ad_account}?fields=name&access_token=${token}`,
+        relative_url: `${account_id}?fields=name`,
       }));
-      namesBatches.push(batch);
+      nameBatches.push(batch);
       index += 50;
     }
 
-    const namesResponses = await Promise.all(
-      namesBatches.map(async (batch) => {
+    await Promise.all(
+      nameBatches.map(async (batch, i) => {
         const response = await fetch(url_base, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -370,59 +379,95 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
         });
 
         const data = await response.json();
-        return data;
+        data.forEach((item, idx) => {
+          try {
+            const body = JSON.parse(item.body);
+            const accId = batch[idx].relative_url.replace("?fields=name", "");
+            accountNames[accId] = body.name || "Sin nombre";
+          } catch {
+            const accId = batch[idx].relative_url.replace("?fields=name", "");
+            accountNames[accId] = "Desconocido";
+          }
+        });
       })
     );
-    let namesResponsesMap = namesResponses[0].map((response) => JSON.parse(response.body))
-    console.log("Names responses: "+ namesResponsesMap);
-    
-    // Dividiendo cuentas en 50 y obteniendo los insights
-    const campaignBatches = [];
+
+    console.log("✅ Nombres de cuentas obtenidos");
+
+    // =========================
+    // 2️⃣ Obtener campañas activas con insights en rango
+    // =========================
+    const resultados = [];
     index = 0;
-    
+    const campaignBatches = [];
+
+    const timeRange = encodeURIComponent(JSON.stringify({ since: start_date, until: end_date }));
+
     while (index < ad_accounts.length) {
       const group = ad_accounts.slice(index, index + 50);
       const batch = group.map((ad_account) => ({
         method: "GET",
-        relative_url: `${ad_account}/campaigns?fields=id,name,effective_status,daily_budget,created_time&filtering=[{'field':'effective_status','operator':'IN','value':['ACTIVE']}]&limit=1000`,
+        relative_url: `${ad_account}/insights?fields=account_id,account_name,campaign_id,campaign_name,impressions,reach,spend,date_start,date_stop,cpm,effective_status&time_range=${timeRange}&level=campaign&limit=500`,
       }));
       campaignBatches.push(batch);
       index += 50;
     }
-    
-    const campaignResponses = await Promise.all(
-      campaignBatches.map(async (batch, i) => {
-        const response = await fetch(url_base, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ access_token: token, batch }),
-        });
-        
-        const data = await response.json();
-        return data;
-      })
-    );
-    let campaignResponsesMap = campaignResponses[0].map((response) => JSON.parse(response.body))
-    console.log("Names responses 2: "+ campaignResponses);
-    
-    res.json(campaignResponsesMap)
-    // ======== Obtener nombres de las cuentas ========
-    // console.log("📡 Obteniendo nombres de las ad accounts...");
-    // const accountNames = {};
 
-    // await Promise.all(
-    //   ad_accounts.map(async (account_id) => {
-    //     try {
-    //       const resp = await fetch(`${url_base}${account_id}?fields=name&access_token=${token}`);
-    //       const data = await resp.json();
-    //       accountNames[account_id] = data.name || "Sin nombre";
-    //     } catch {
-    //       accountNames[account_id] = "Desconocido";
-    //     }
-    //   })
-    // );
+    console.log(`📦 Se generaron ${campaignBatches.length} lotes de insights personalizados`);
 
-  }else{
+    // Ejecutar lotes de insights
+    for (let i = 0; i < campaignBatches.length; i++) {
+      const response = await fetch(url_base, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ access_token: token, batch: campaignBatches[i] }),
+      });
+
+      const data = await response.json();
+      console.log(`✅ Lote ${i + 1} procesado (${campaignBatches[i].length} cuentas)`);
+
+      data.forEach((item) => {
+        try {
+          const body = JSON.parse(item.body);
+          if (body.data && body.data.length > 0) {
+            body.data.forEach((row) => {
+              resultados.push({
+                ad_account_id: row.account_id,
+                ad_account_name: row.account_name || accountNames[row.account_id] || "Desconocido",
+                campaign_id: row.campaign_id,
+                campaign_name: row.campaign_name,
+                effective_status: row.effective_status || "N/A",
+                impressions: row.impressions,
+                reach: row.reach,
+                amount_spent: row.spend,
+                cpm: row.cpm,
+                reporting_starts: row.date_start,
+                reporting_ends: row.date_stop,
+              });
+            });
+          }
+        } catch {
+          // ignorar errores individuales
+        }
+      });
+    }
+
+    console.log(`📊 Campañas activas con insights: ${resultados.length}`);
+
+    // =========================
+    // 3️⃣ Enviar respuesta final
+    // =========================
+    res.json({
+      total: resultados.length,
+      resultados,
+    });
+
+  } catch (error) {
+    console.error("❌ Error en custom_filter:", error);
+    res.status(500).json({ error: error.message });
+  }
+
+}else{
     return res.status(400).json({ error: "tipo_solicitud no reconocido" });
   }
 
