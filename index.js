@@ -334,40 +334,38 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
       res.status(500).json({ error: error.message });
     }
 
-  } else if (req.body.tipo_solicitud === "custom_filter") {
-
-  const token = "EAAWKn4ZCjg3ABPvM6yNdpT3m0YC4NlOZBqnk6NwP3357JZBlLVtfvSggaJde3bkislJxnIjagEGl5TZCgh2ZB9wFBHtBf7UxkaU90P3g7LMOpkv90ByZC4ODy83ebh4x7egB6vqsHZCecKWGwgAuKLHDOflDLKwlWMNZBv5bQgpCGvv7JlPkUCa4PJlRIRYvfeL5SAZDZD";
-  const ad_accounts = req.body?.ad_accounts ?? [];
-  const start_date = req.body.start_date;
-  const end_date = req.body.end_date;
-
-  if (!ad_accounts.length) {
-    return res.status(400).json({ error: "No se enviaron ad_accounts" });
-  }
-
-  if (!start_date || !end_date) {
-    return res.status(400).json({ error: "Fechas no enviadas correctamente" });
-  }
-
-  const url_base = "https://graph.facebook.com/v23.0/";
-  console.log(`📅 Fechas recibidas: ${start_date} → ${end_date}`);
-
+  } else if (req.body.tipo_solicitud == "custom_filter") {
   try {
-    // =========================
-    // 1️⃣ Obtener nombres de cuentas (batch)
-    // =========================
+    const token = "EAAWKn4ZCjg3ABPvM6yNdpT3m0YC4NlOZBqnk6NwP3357JZBlLVtfvSggaJde3bkislJxnIjagEGl5TZCgh2ZB9wFBHtBf7UxkaU90P3g7LMOpkv90ByZC4ODy83ebh4x7egB6vqsHZCecKWGwgAuKLHDOflDLKwlWMNZBv5bQgpCGvv7JlPkUCa4PJlRIRYvfeL5SAZDZD";
+    const ad_accounts = req.body?.ad_accounts ?? [];
+    const { since, until } = req.body ?? {};
+
+    if (!ad_accounts.length) {
+      return res.status(400).json({ error: "No se enviaron ad_accounts" });
+    }
+    if (!since || !until) {
+      return res.status(400).json({ error: "Debe enviar since y until" });
+    }
+
+    console.log("📅 Fechas personalizadas:", { since, until });
+
+    const url_base = "https://graph.facebook.com/v23.0/";
+
+    // ======== Obtener nombres de las cuentas (batch) ========
+    console.log("📡 Obteniendo nombres de las ad accounts (batch)...");
+
     const accountNames = {};
-    let index = 0;
+    let index2 = 0;
     const nameBatches = [];
 
-    while (index < ad_accounts.length) {
-      const group = ad_accounts.slice(index, index + 50);
+    while (index2 < ad_accounts.length) {
+      const group = ad_accounts.slice(index2, index2 + 50);
       const batch = group.map((account_id) => ({
         method: "GET",
         relative_url: `${account_id}?fields=name`,
       }));
       nameBatches.push(batch);
-      index += 50;
+      index2 += 50;
     }
 
     await Promise.all(
@@ -379,95 +377,155 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
         });
 
         const data = await response.json();
+        console.log(`✅ Lote de nombres ${i + 1} procesado (${batch.length} cuentas)`);
+
         data.forEach((item, idx) => {
           try {
             const body = JSON.parse(item.body);
-            const accId = batch[idx].relative_url.replace("?fields=name", "");
+            const accId = nameBatches[i][idx].relative_url.replace("?fields=name", "");
             accountNames[accId] = body.name || "Sin nombre";
           } catch {
-            const accId = batch[idx].relative_url.replace("?fields=name", "");
+            const accId = nameBatches[i][idx].relative_url.replace("?fields=name", "");
             accountNames[accId] = "Desconocido";
           }
         });
       })
     );
 
-    console.log("✅ Nombres de cuentas obtenidos");
+    console.log("✅ Nombres de ad accounts obtenidos (batch).");
 
-    // =========================
-    // 2️⃣ Obtener campañas activas con insights en rango
-    // =========================
-    const resultados = [];
-    index = 0;
+    // ======== Llamada: Campañas activas ========
     const campaignBatches = [];
-
-    const timeRange = encodeURIComponent(JSON.stringify({ since: start_date, until: end_date }));
+    let index = 0;
 
     while (index < ad_accounts.length) {
       const group = ad_accounts.slice(index, index + 50);
       const batch = group.map((ad_account) => ({
         method: "GET",
-        relative_url: `${ad_account}/insights?fields=account_id,account_name,campaign_id,campaign_name,impressions,reach,spend,date_start,date_stop,cpm,effective_status&time_range=${timeRange}&level=campaign&limit=500`,
+        relative_url: `${ad_account}/campaigns?fields=id,name,effective_status,daily_budget,created_time&filtering=[{'field':'effective_status','operator':'IN','value':['ACTIVE']}]&limit=1000`,
       }));
       campaignBatches.push(batch);
       index += 50;
     }
 
-    console.log(`📦 Se generaron ${campaignBatches.length} lotes de insights personalizados`);
+    console.log(`📊 Se generaron ${campaignBatches.length} lotes de campañas`);
 
-    // Ejecutar lotes de insights
-    for (let i = 0; i < campaignBatches.length; i++) {
-      const response = await fetch(url_base, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ access_token: token, batch: campaignBatches[i] }),
-      });
+    const campaignResponses = await Promise.all(
+      campaignBatches.map(async (batch, i) => {
+        const response = await fetch(url_base, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ access_token: token, batch }),
+        });
 
-      const data = await response.json();
-      console.log(`✅ Lote ${i + 1} procesado (${campaignBatches[i].length} cuentas)`);
+        const data = await response.json();
+        console.log(`✅ Batch de campañas ${i + 1} procesado`);
+        return data;
+      })
+    );
 
-      data.forEach((item) => {
-        try {
-          const body = JSON.parse(item.body);
-          if (body.data && body.data.length > 0) {
-            body.data.forEach((row) => {
-              resultados.push({
-                ad_account_id: row.account_id,
-                ad_account_name: row.account_name || accountNames[row.account_id] || "Desconocido",
-                campaign_id: row.campaign_id,
-                campaign_name: row.campaign_name,
-                effective_status: row.effective_status || "N/A",
-                impressions: row.impressions,
-                reach: row.reach,
-                amount_spent: row.spend,
-                cpm: row.cpm,
-                reporting_starts: row.date_start,
-                reporting_ends: row.date_stop,
-              });
-            });
-          }
-        } catch {
-          // ignorar errores individuales
-        }
-      });
+    // Extraer todas las campañas y agregar account_name
+    const allCampaigns = campaignResponses
+      .flatMap((r) =>
+        r
+          .map((item, idx) => {
+            try {
+              const body = JSON.parse(item.body);
+              const adAccount = ad_accounts[Math.floor(idx / 50)] || "unknown";
+              return (body.data ?? []).map((camp) => ({
+                ...camp,
+                ad_account_id: adAccount,
+                account_name: accountNames[adAccount] || "Sin nombre",
+              }));
+            } catch {
+              return [];
+            }
+          })
+          .flat()
+      )
+      .flat();
+
+    console.log(`📈 Total campañas obtenidas: ${allCampaigns.length}`);
+
+    // ======== Llamada: Insights (una sola, fechas personalizadas) ========
+    const timeRange = { since, until };
+    const timeRangeEncoded = encodeURIComponent(JSON.stringify(timeRange));
+    const insightBatches = [];
+    let index3 = 0;
+
+    while (index3 < ad_accounts.length) {
+      const group = ad_accounts.slice(index3, index3 + 50);
+      const batch = group.map((ad_account) => ({
+        method: "GET",
+        relative_url: `${ad_account}/insights?fields=campaign_id,adset_id,date_start,date_stop,spend,impressions,clicks,reach,cpm,actions&time_range=${timeRangeEncoded}&level=campaign&limit=500`,
+      }));
+      insightBatches.push(batch);
+      index3 += 50;
     }
 
-    console.log(`📊 Campañas activas con insights: ${resultados.length}`);
+    console.log(`📦 Se generaron ${insightBatches.length} lotes de insights`);
 
-    // =========================
-    // 3️⃣ Enviar respuesta final
-    // =========================
+    const insightResponses = await Promise.all(
+      insightBatches.map(async (batch, i) => {
+        const response = await fetch(url_base, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ access_token: token, batch }),
+        });
+
+        const data = await response.json();
+        console.log(`✅ Batch de insights ${i + 1} procesado`);
+        return data;
+      })
+    );
+
+    const allInsights = insightResponses
+      .flatMap((r, batchIdx) =>
+        r
+          .map((item, idx) => {
+            try {
+              const body = JSON.parse(item.body);
+              const adAccount = ad_accounts[batchIdx * 50 + idx] || "unknown";
+              return (body.data ?? []).map((ins) => ({
+                ...ins,
+                ad_account_id: adAccount,
+                account_name: accountNames[adAccount] || "Sin nombre",
+              }));
+            } catch {
+              return [];
+            }
+          })
+          .flat()
+      )
+      .flat();
+
+    console.log(`📊 Total insights: ${allInsights.length}`);
+
+    // ======== Unir campañas + insights ========
+    const mergeData = (insights) => {
+      const map = new Map(insights.map((ins) => [ins.campaign_id, ins]));
+      return allCampaigns.map((camp) => {
+        const match = map.get(camp.id);
+        return match ? { ...camp, ...match } : camp;
+      });
+    };
+
+    const merged = mergeData(allInsights);
+    const filtradas = merged.filter((item) => item.spend && parseFloat(item.spend) > 0);
+
+    console.log(`✅ Total combinadas y filtradas: ${filtradas.length}`);
+
     res.json({
-      total: resultados.length,
-      resultados,
+      rango: { since, until },
+      total: filtradas.length,
+      resultados: filtradas,
     });
-
-  } catch (error) {
-    console.error("❌ Error en custom_filter:", error);
-    res.status(500).json({ error: error.message });
+  } catch (err) {
+    console.error("❌ Error general:", err);
+    res.status(500).json({ error: err.message });
   }
-
-}else{
+}
+else{
     return res.status(400).json({ error: "tipo_solicitud no reconocido" });
   }
 
