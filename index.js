@@ -536,7 +536,48 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
   console.log(`📊 Revisando ${ad_accounts.length} cuentas publicitarias...`);
 
   try {
-    // ======== Obtener campañas activas por batch ========
+    // ======== 1️⃣ Obtener nombres de las cuentas ========
+    console.log("📡 Obteniendo nombres de ad accounts (batch)...");
+    const accountNames = {};
+    let accIdx = 0;
+    const accountBatches = [];
+
+    while (accIdx < ad_accounts.length) {
+      const group = ad_accounts.slice(accIdx, accIdx + 50);
+      const batch = group.map((accId) => ({
+        method: "GET",
+        relative_url: `${accId}?fields=name`
+      }));
+      accountBatches.push(batch);
+      accIdx += 50;
+    }
+
+    await Promise.all(
+      accountBatches.map(async (batch, i) => {
+        const response = await fetch(url_base, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ access_token: token, batch })
+        });
+        const data = await response.json();
+        console.log(`✅ Lote de nombres ${i + 1} procesado (${batch.length} cuentas)`);
+
+        data.forEach((item, idx) => {
+          try {
+            const body = JSON.parse(item.body);
+            const accId = batch[idx].relative_url.split("?")[0];
+            accountNames[accId] = body.name || "Sin nombre";
+          } catch {
+            const accId = batch[idx].relative_url.split("?")[0];
+            accountNames[accId] = "Desconocido";
+          }
+        });
+      })
+    );
+
+    console.log(`✅ Nombres obtenidos: ${Object.keys(accountNames).length}`);
+
+    // ======== 2️⃣ Obtener campañas activas por batch ========
     let index = 0;
     const campaignBatches = [];
     while (index < ad_accounts.length) {
@@ -562,22 +603,34 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
       })
     );
 
-    // ======== Consolidar campañas activas ========
-    const allCampaigns = campaignResponses
-      .flat()
-      .map((item) => {
+    // ======== 3️⃣ Consolidar campañas activas ========
+    const allCampaigns = [];
+    campaignResponses.forEach((batch, bIndex) => {
+      batch.forEach((item, i) => {
         try {
           const body = JSON.parse(item.body);
-          return (body.data || []).filter((c) => c.status === "ACTIVE");
-        } catch {
-          return [];
+          const accId = campaignBatches[bIndex][i].relative_url.split("/")[0];
+          const active = (body.data || []).filter((c) => c.status === "ACTIVE");
+          active.forEach((c) => {
+            allCampaigns.push({
+              ...c,
+              ad_account_id: accId,
+              ad_account_name: accountNames[accId] || "Sin nombre"
+            });
+          });
+        } catch (err) {
+          console.log("❌ Error parseando campañas:", err.message);
         }
-      })
-      .flat();
+      });
+    });
 
     console.log(`📈 Total campañas activas encontradas: ${allCampaigns.length}`);
 
-    // ======== Obtener anuncios con posibles errores ========
+    if (allCampaigns.length === 0) {
+      return res.json({ total_ads_con_errores: 0, resultados: [] });
+    }
+
+    // ======== 4️⃣ Obtener anuncios con posibles errores ========
     const campaignIds = allCampaigns.map((c) => c.id);
     const adBatches = [];
     let idx = 0;
@@ -605,22 +658,25 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
       })
     );
 
-    // ======== Filtrar ads con errores ========
-    const allAds = adResponses
-      .flat()
-      .map((item, batchIdx) => {
+    // ======== 5️⃣ Filtrar ads con errores ========
+    const allAds = [];
+    adResponses.forEach((batch, bIdx) => {
+      batch.forEach((item, i) => {
         try {
           const body = JSON.parse(item.body);
-          const campaignId = adBatches[Math.floor(batchIdx / 50)]?.[batchIdx % 50]?.relative_url.split("/")[0];
-          return (body.data || []).map((ad) => ({
-            ...ad,
-            campaign_id: campaignId
-          }));
+          const campaignId = adBatches[bIdx][i].relative_url.split("/")[0];
+          const ads = body.data || [];
+          ads.forEach((ad) => {
+            allAds.push({
+              ...ad,
+              campaign_id: campaignId
+            });
+          });
         } catch {
-          return [];
+          // ignorar campañas con errores de parseo
         }
-      })
-      .flat();
+      });
+    });
 
     console.log(`📊 Total ads revisados: ${allAds.length}`);
 
@@ -634,18 +690,25 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
 
     console.log(`⚠️ Total ads con errores: ${adsWithErrors.length}`);
 
-    // ======== Agregar nombres de campaña ========
-    const campaignMap = new Map(allCampaigns.map((c) => [c.id, c.name]));
-    const finalResult = adsWithErrors.map((ad) => ({
-      ad_id: ad.id,
-      ad_name: ad.name,
-      campaign_id: ad.campaign_id,
-      campaign_name: campaignMap.get(ad.campaign_id) || "Desconocida",
-      effective_status: ad.effective_status,
-      issues_info: ad.issues_info ?? [],
-      ad_review_feedback: ad.ad_review_feedback ?? {}
-    }));
+    // ======== 6️⃣ Agregar nombres de campaña y cuenta ========
+    const campaignMap = new Map(allCampaigns.map((c) => [c.id, c]));
 
+    const finalResult = adsWithErrors.map((ad) => {
+      const camp = campaignMap.get(ad.campaign_id);
+      return {
+        ad_id: ad.id,
+        ad_name: ad.name,
+        campaign_id: ad.campaign_id,
+        campaign_name: camp?.name || "Desconocida",
+        ad_account_id: camp?.ad_account_id || "unknown",
+        ad_account_name: camp?.ad_account_name || "Sin nombre",
+        effective_status: ad.effective_status,
+        issues_info: ad.issues_info ?? [],
+        ad_review_feedback: ad.ad_review_feedback ?? {}
+      };
+    });
+
+    // ======== 7️⃣ Respuesta final ========
     res.json({
       total_ads_con_errores: finalResult.length,
       resultados: finalResult
