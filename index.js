@@ -582,13 +582,27 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
 
     // === 2️⃣ Obtener los primeros 500 ads por cuenta (batch) ===
     console.log("📥 Descargando ads (batch)...");
+
+    // Incluye TODOS los estados posibles
+    const allStatuses = [
+      "ACTIVE",
+      "PAUSED",
+      "DELETED",
+      "ARCHIVED",
+      "IN_PROCESS",
+      "WITH_ISSUES",
+      "PENDING_REVIEW",
+      "DISAPPROVED",
+      "PREAPPROVED"
+    ];
+
     const adBatches = chunkArray(ad_accounts, 50);
     const allAdsByAccount = {};
 
     for (let i = 0; i < adBatches.length; i++) {
       const batch = adBatches[i].map((accountId) => ({
         method: "GET",
-        relative_url: `${accountId}/ads?fields=id,name,campaign_id,campaign_name,effective_status,issues_info,ad_review_feedback&limit=500&effective_status=['ALL']`,
+        relative_url: `${accountId}/ads?fields=id,name,campaign_id,campaign_name,effective_status,issues_info,ad_review_feedback&limit=500&effective_status=[${allStatuses.map(s => `'${s}'`).join(',')}]`,
       }));
 
       const resBatch = await fetch(url_base, {
@@ -616,10 +630,11 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
     console.log("🧩 Filtrando ads con errores y agrupando por campaña...");
     for (const accountId of Object.keys(allAdsByAccount)) {
       const ads = allAdsByAccount[accountId] || [];
-      const adsConErrores = ads.filter((ad) =>
-        (ad.issues_info && ad.issues_info.length > 0) ||
-        (ad.ad_review_feedback && Object.keys(ad.ad_review_feedback).length > 0) ||
-        (ad.effective_status && ad.effective_status.includes("DISAPPROVED"))
+      const adsConErrores = ads.filter(
+        (ad) =>
+          (ad.issues_info && ad.issues_info.length > 0) ||
+          (ad.ad_review_feedback && Object.keys(ad.ad_review_feedback).length > 0) ||
+          (ad.effective_status && ad.effective_status.includes("DISAPPROVED"))
       );
 
       if (!adsConErrores.length) continue;
@@ -655,7 +670,6 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
     res.status(500).json({ error: err.message });
   }
 }
-
 
 
 else{
