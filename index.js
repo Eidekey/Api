@@ -21,6 +21,7 @@ app.post("/saludo", async (req, res) => {
 
   const since7 = new Date(today);
   since7.setDate(today.getDate() - 7);
+  
 
   const fechas = {
     tresDias: { since: formatDate(since3), until: formatDate(today) },
