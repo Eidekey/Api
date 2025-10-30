@@ -526,7 +526,7 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
   }
 }else if (req.body.tipo_solicitud == "errors_full") {
   try {
-    console.log("🚨 Iniciando revisión de ads con errores...");
+    console.log("🚨 Iniciando revisión de campañas con ads con errores...");
 
     const token = "EAAWKn4ZCjg3ABPvM6yNdpT3m0YC4NlOZBqnk6NwP3357JZBlLVtfvSggaJde3bkislJxnIjagEGl5TZCgh2ZB9wFBHtBf7UxkaU90P3g7LMOpkv90ByZC4ODy83ebh4x7egB6vqsHZCecKWGwgAuKLHDOflDLKwlWMNZBv5bQgpCGvv7JlPkUCa4PJlRIRYvfeL5SAZDZD"; // 🔒 reemplázalo con tu access token
     const url_base = "https://graph.facebook.com/v23.0";
@@ -538,7 +538,7 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
 
     const resultados = [];
 
-    // 🔹 Función auxiliar para obtener todos los elementos con paginación
+    // 🔹 Función auxiliar: obtiene todas las páginas de resultados
     async function fetchAllPages(url) {
       let results = [];
       let nextUrl = url;
@@ -549,13 +549,13 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
 
         if (data?.data?.length) results.push(...data.data);
         nextUrl = data.paging?.next || null;
-        await new Promise((r) => setTimeout(r, 200)); // pequeño delay
+        await new Promise((r) => setTimeout(r, 200)); // pequeño delay para no saturar
       }
 
       return results;
     }
 
-    // 🔹 Procesar cuentas en bloques de 5 para no saturar la API
+    // 🔹 Procesar en grupos pequeños
     const chunkSize = 5;
     for (let i = 0; i < ad_accounts.length; i += chunkSize) {
       const group = ad_accounts.slice(i, i + chunkSize);
@@ -564,14 +564,14 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
       await Promise.all(
         group.map(async (accountId) => {
           try {
-            // 1️⃣ Obtener nombre del ad account
+            // 1️⃣ Obtener nombre de la ad account
             const accRes = await fetch(
               `${url_base}/${accountId}?fields=name&access_token=${token}`
             );
             const accData = await accRes.json();
             const accountName = accData.name || "Desconocido";
 
-            // 2️⃣ Obtener campañas activas (con paginación)
+            // 2️⃣ Obtener campañas activas
             const campaignsUrl = `${url_base}/${accountId}/campaigns?fields=id,name,status&limit=500&access_token=${token}`;
             const campaigns = await fetchAllPages(campaignsUrl);
             const activeCampaigns = campaigns.filter(
@@ -582,11 +582,12 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
               `📊 ${accountId}: ${activeCampaigns.length} campañas activas`
             );
 
-            // 3️⃣ Por cada campaña, obtener ads y revisar errores
+            // 3️⃣ Revisar ads de cada campaña
             for (const camp of activeCampaigns) {
               const adsUrl = `${url_base}/${camp.id}/ads?fields=id,name,effective_status,issues_info,ad_review_feedback&limit=500&access_token=${token}`;
               const ads = await fetchAllPages(adsUrl);
 
+              // Verificar si alguno de los ads tiene errores
               const adsWithErrors = ads.filter((ad) => {
                 const hasIssues =
                   (ad.issues_info && ad.issues_info.length > 0) ||
@@ -597,23 +598,23 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
                 return hasIssues;
               });
 
-              // 4️⃣ Guardar solo los ads con problemas
-              for (const ad of adsWithErrors) {
+              if (adsWithErrors.length > 0) {
+                // Recolectar resumen de errores
+                const errorSummaries = adsWithErrors.map((ad) => {
+                  return (
+                    ad.issues_info?.[0]?.error_summary ||
+                    ad.effective_status ||
+                    "Unknown"
+                  );
+                });
+
                 resultados.push({
                   ad_account_id: accountId,
                   ad_account_name: accountName,
                   campaign_id: camp.id,
                   campaign_name: camp.name,
-                  ad_id: ad.id,
-                  ad_name: ad.name,
-                  error_type:
-                    ad.issues_info?.[0]?.error_summary ||
-                    ad.effective_status ||
-                    "Unknown",
-                  error_message:
-                    ad.issues_info?.[0]?.error_message ||
-                    ad.ad_review_feedback?.global ||
-                    "N/A",
+                  total_ads_con_errores: adsWithErrors.length,
+                  error_tipos: [...new Set(errorSummaries)].join(", "),
                 });
               }
             }
@@ -624,13 +625,14 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
       );
     }
 
-    console.log(`✅ Total de ads con errores: ${resultados.length}`);
+    console.log(`✅ Total de campañas con errores: ${resultados.length}`);
     res.json({ total: resultados.length, resultados });
   } catch (err) {
     console.error("❌ Error general en errors_full:", err);
     res.status(500).json({ error: err.message });
   }
 }
+
 else{
     return res.status(400).json({ error: "tipo_solicitud no reconocido" });
   }
