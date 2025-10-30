@@ -527,7 +527,7 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
   }
 }else if (req.body.tipo_solicitud == "errors_full") {
   try {
-    console.log("🚨 Iniciando revisión de errores a nivel de ad account (por ads directos, con batch)...");
+    console.log("🚨 Iniciando revisión de errores a nivel de ad account (por ads directos, con batch, sin filtro de estado)...");
 
     const token = "EAAWKn4ZCjg3ABPvM6yNdpT3m0YC4NlOZBqnk6NwP3357JZBlLVtfvSggaJde3bkislJxnIjagEGl5TZCgh2ZB9wFBHtBf7UxkaU90P3g7LMOpkv90ByZC4ODy83ebh4x7egB6vqsHZCecKWGwgAuKLHDOflDLKwlWMNZBv5bQgpCGvv7JlPkUCa4PJlRIRYvfeL5SAZDZD";
     const url_base = "https://graph.facebook.com/v23.0";
@@ -580,15 +580,16 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
       await new Promise((r) => setTimeout(r, 400));
     }
 
-    // === 2️⃣ Obtener los primeros 500 ads por cuenta (batch) ===
-    console.log("📥 Descargando ads (batch)...");
+    // === 2️⃣ Obtener todos los ads por cuenta (batch, sin filtrar estado) ===
+    console.log("📥 Descargando ads (batch, sin filtro de estado)...");
     const adBatches = chunkArray(ad_accounts, 50);
     const allAdsByAccount = {};
 
     for (let i = 0; i < adBatches.length; i++) {
       const batch = adBatches[i].map((accountId) => ({
         method: "GET",
-        relative_url: `${accountId}/ads?fields=id,name,campaign_id,campaign_name,effective_status,issues_info,ad_review_feedback&limit=500`,
+        // ⚠️ Aquí está la clave: agregamos effective_status=ALL
+        relative_url: `${accountId}/ads?fields=id,name,campaign_id,campaign_name,effective_status,issues_info,ad_review_feedback&limit=500&effective_status=['ACTIVE','PAUSED','DELETED','ARCHIVED','IN_PROCESS','WITH_ISSUES','PENDING_REVIEW','DISAPPROVED','PREAPPROVED']`,
       }));
 
       const resBatch = await fetch(url_base, {
@@ -655,7 +656,6 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
     res.status(500).json({ error: err.message });
   }
 }
-
 
 
 else{
