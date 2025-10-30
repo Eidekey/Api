@@ -588,7 +588,7 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
     for (let i = 0; i < adBatches.length; i++) {
       const batch = adBatches[i].map((accountId) => ({
         method: "GET",
-        relative_url: `${accountId}/ads?fields=id,name,campaign_id,campaign_name,effective_status,issues_info,ad_review_feedback&limit=500`,
+        relative_url: `${accountId}/ads?fields=id,name,campaign_id,campaign_name,effective_status,issues_info,ad_review_feedback&limit=500&effective_status=['ALL']`,
       }));
 
       const resBatch = await fetch(url_base, {
