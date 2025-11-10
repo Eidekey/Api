@@ -3,6 +3,7 @@ import fetch from "node-fetch";
 
 const app = express();
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 app.post("/saludo", async (req, res) => {
   if (req.body.tipo_solicitud == "smoked") {
