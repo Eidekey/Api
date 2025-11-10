@@ -705,6 +705,73 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
     console.error("❌ Error general en errors_full:", err);
     res.status(500).json({ error: err.message });
   }
+} else if (
+  req.body.tipo_solicitud === "slack_exclude" ||
+  (req.body.payload && JSON.parse(req.body.payload)?.type === "block_actions")
+) {
+  try {
+    console.log("🚀 Procesando solicitud Slack Exclude...");
+
+    const { google } = require("googleapis");
+
+    const SPREADSHEET_ID = "1D0UpKLXTMmeu3Y0PAsBbPkpBHvtf6zcWe8P8wdoyKvw";
+    const SHEET_NAME = "Exclusions";
+
+    // Slack envía el JSON como string dentro de req.body.payload
+    const payload = req.body.payload
+      ? JSON.parse(req.body.payload)
+      : req.body;
+
+    console.log("🧩 Payload recibido de Slack:", payload);
+
+    const stateValues = payload.state?.values || {};
+    const user =
+      payload.user?.username || payload.user?.name || "Unknown_User";
+
+    // Extraer campañas seleccionadas de los checkboxes
+    let excludedCampaigns = [];
+    for (const blockId in stateValues) {
+      const action = Object.values(stateValues[blockId])[0];
+      const selected = action.selected_options || [];
+      selected.forEach((opt) => excludedCampaigns.push(opt.value));
+    }
+
+    const date = new Date().toISOString();
+
+    // Autenticación con Google Sheets API
+    const auth = new google.auth.GoogleAuth({
+      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+    });
+    const sheets = google.sheets({ version: "v4", auth: await auth.getClient() });
+
+    // Guardar campañas excluidas en la hoja
+    if (excludedCampaigns.length > 0) {
+      const rows = excludedCampaigns.map((c) => [user, c, date]);
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${SHEET_NAME}!A:C`,
+        valueInputOption: "RAW",
+        requestBody: { values: rows },
+      });
+      console.log("✅ Campañas guardadas en Google Sheets:", excludedCampaigns);
+    } else {
+      console.log("⚠️ No se seleccionaron campañas.");
+    }
+
+    // Respuesta que Slack mostrará al usuario
+    return res.status(200).json({
+      response_action: "update",
+      text:
+        excludedCampaigns.length > 0
+          ? `✅ ${excludedCampaigns.length} campaigns excluded successfully.`
+          : "⚠️ No campaigns selected.",
+    });
+  } catch (error) {
+    console.error("❌ Error procesando Slack exclude:", error);
+    return res
+      .status(500)
+      .json({ error: "Error processing Slack exclude request." });
+  }
 }
 
 
