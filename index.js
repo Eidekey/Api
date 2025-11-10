@@ -712,15 +712,16 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
   (req.is && req.is("application/json") && (req.body.type === "block_actions" || req.body.type === "view_submission"))
 ) {
   try {
-    console.log("🚀 Entrando en handler slack_exclude");
+    console.log("🚀 Entrando en handler slack_exclude (ESM)");
 
-    const { google } = require("googleapis");
-    const fetch = require("node-fetch");
+    const { GoogleAuth } = await import("google-auth-library");
+    const { google } = await import("googleapis");
+    const fetch = (await import("node-fetch")).default;
 
     const SPREADSHEET_ID = "1D0UpKLXTMmeu3Y0PAsBbPkpBHvtf6zcWe8P8wdoyKvw";
     const SHEET_NAME = "Exclusions";
 
-    // 1) Parsear payload de Slack correctamente (puede venir como form-urlencoded -> payload)
+    // --- 1) Parsear payload de Slack correctamente ---
     let payload;
     if (req.body.payload) {
       try {
@@ -730,10 +731,9 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
         return res.status(400).send("Invalid payload");
       }
     } else if (req.is && req.is("application/json") && req.body.type) {
-      // Slack puede enviar JSON directamente (p. ej. si proxied)
       payload = req.body;
     } else {
-      console.log("⚠️ No se detectó payload de Slack en la request. Body:", req.body);
+      console.log("⚠️ No se detectó payload Slack en la request. Body:", req.body);
       return res.status(400).send("No Slack payload found");
     }
 
@@ -742,61 +742,45 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
     const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
     if (!SLACK_BOT_TOKEN) console.warn("⚠️ SLACK_BOT_TOKEN no definido en las env vars");
 
-    // 2) Si se hizo click en el botón -> payload.type === "block_actions"
+    // --- 2) Si se hizo click en el botón ---
     if (payload.type === "block_actions") {
       console.log("🔘 block_actions recibido. Abriendo modal...");
 
-      // Extraer trigger_id (necesario para views.open)
       const trigger_id = payload.trigger_id;
       if (!trigger_id) {
         console.error("❌ No trigger_id en payload");
         return res.status(400).send("No trigger_id");
       }
 
-      // Intentamos extraer campañas desde el value del action (si las mandaste desde Apps Script)
-      // value puede ser JSON.stringify(grouped) o un ID/marker. So soportamos ambos.
       let campaignsList = [];
       try {
         const act = payload.actions && payload.actions[0];
-        if (act) {
-          if (act.value) {
-            try {
-              const parsed = JSON.parse(act.value);
-              // Si viene como objeto agrupado {account: [camp1, camp2], ...}
-              if (typeof parsed === "object" && !Array.isArray(parsed)) {
-                campaignsList = Object.entries(parsed).flatMap(([account, camps]) =>
-                  (camps || []).map(c => `${account} | ${c}`)
-                );
-              } else if (Array.isArray(parsed)) {
-                campaignsList = parsed.slice();
-              } else {
-                // string simple: lo usamos como única campaña
-                campaignsList = [String(parsed)];
-              }
-            } catch {
-              // value no es JSON; quizás es string que contiene campañas separadas por |||
-              campaignsList = String(act.value).split("|||").filter(Boolean);
-            }
+        if (act?.value) {
+          const parsed = JSON.parse(act.value);
+          if (typeof parsed === "object" && !Array.isArray(parsed)) {
+            campaignsList = Object.entries(parsed).flatMap(([acc, camps]) =>
+              (camps || []).map(c => `${acc} | ${c}`)
+            );
+          } else if (Array.isArray(parsed)) {
+            campaignsList = parsed.slice();
+          } else {
+            campaignsList = [String(parsed)];
           }
         }
       } catch (err) {
-        console.warn("⚠️ No se pudieron extraer campaigns desde action.value:", err);
+        console.warn("⚠️ No se pudieron extraer campañas:", err);
       }
 
-      // Si no pudimos extraer campaigns desde el value, regresamos un ACK y logueamos
       if (!campaignsList.length) {
-        console.warn("⚠️ campaignsList vacío — asegúrate de enviar las campañas en action.value o que tu backend lea la sheet.");
-        // Responder 200 para ack y evitar retries de Slack
+        console.warn("⚠️ campaignsList vacío, no se abrirá modal.");
         return res.status(200).send();
       }
 
-      // Construir opciones para las checkboxes del modal
       const options = campaignsList.map((c, i) => ({
         text: { type: "plain_text", text: c },
-        value: `excl__${i}__${c}`.slice(0, 200) // value limitado a 200 chars por Slack
+        value: `excl__${i}__${c}`.slice(0, 200)
       }));
 
-      // Modal dinámico
       const modal = {
         trigger_id,
         view: {
@@ -820,12 +804,6 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
         }
       };
 
-      // Llamar a views.open con el bot token
-      if (!SLACK_BOT_TOKEN) {
-        console.error("❌ No SLACK_BOT_TOKEN; no puedo abrir modal");
-        return res.status(500).send("Missing bot token");
-      }
-
       const openResp = await fetch("https://slack.com/api/views.open", {
         method: "POST",
         headers: {
@@ -837,30 +815,24 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
 
       const openJson = await openResp.json();
       console.log("📬 views.open response:", openJson);
-
-      // Siempre responder 200 a Slack (ack)
       return res.status(200).send();
     }
 
-    // 3) Si es el submit del modal -> payload.type === "view_submission"
+    // --- 3) Si es el submit del modal ---
     if (payload.type === "view_submission") {
-      console.log("📨 view_submission recibido. Procesando selección...");
+      console.log("📨 view_submission recibido.");
 
       const stateValues = payload.view?.state?.values || {};
       const user =
         payload.user?.username || payload.user?.name || payload.user?.id || "Unknown_User";
 
-      // Extraer campañas seleccionadas de los checkboxes
       let excludedCampaigns = [];
       for (const blockId in stateValues) {
         const action = Object.values(stateValues[blockId])[0];
         if (!action) continue;
         const selected = action.selected_options || [];
         selected.forEach((opt) => {
-          // opt.value contiene el value que definimos en options (con índice y texto)
-          // recuperamos el texto legible:
           const raw = opt.value;
-          // si formateamos como "excl__i__<texto>" intentamos extraer <texto>
           const parts = raw.split("__");
           if (parts.length >= 3) {
             excludedCampaigns.push(parts.slice(2).join("__"));
@@ -872,12 +844,13 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
 
       console.log("🎯 Campañas seleccionadas:", excludedCampaigns);
 
-      // Guardar en Google Sheets
+      // --- Guardar en Google Sheets ---
       const date = new Date().toISOString();
-      const auth = new google.auth.GoogleAuth({
+      const auth = new GoogleAuth({
         scopes: ["https://www.googleapis.com/auth/spreadsheets"]
       });
-      const sheets = google.sheets({ version: "v4", auth: await auth.getClient() });
+      const client = await auth.getClient();
+      const sheets = google.sheets({ version: "v4", auth: client });
 
       if (excludedCampaigns.length > 0) {
         const rows = excludedCampaigns.map((c) => [user, c, date]);
@@ -892,11 +865,9 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
         console.log("⚠️ No se seleccionaron campañas en el modal.");
       }
 
-      // Responder a Slack para limpiar el modal
       return res.status(200).json({ response_action: "clear" });
     }
 
-    // Si llegamos aquí, no es un tipo que esperamos -> ack genérico
     console.log("ℹ️ Payload tipo no manejado:", payload.type);
     return res.status(200).send();
   } catch (err) {
@@ -904,7 +875,6 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
     return res.status(500).json({ error: err.message });
   }
 }
-
 
 
 
