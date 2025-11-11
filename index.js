@@ -706,181 +706,111 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
     console.error("❌ Error general en errors_full:", err);
     res.status(500).json({ error: err.message });
   }
-}else if (
-  req.body.tipo_solicitud === "slack_exclude" ||
-  req.body.type === "block_actions" ||
-  (req.body.payload && req.body.payload.includes("block_actions"))
-) {
-  try {
-    console.log("🚀 Entrando en handler slack_exclude (ESM)");
-
-    const { GoogleAuth } = await import("google-auth-library");
-    const { google } = await import("googleapis");
-    const fetch = (await import("node-fetch")).default;
-
-    const SPREADSHEET_ID = "1D0UpKLXTMmeu3Y0PAsBbPkpBHvtf6zcWe8P8wdoyKvw";
-    const SHEET_NAME = "Exclusions";
-    const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
-
-    // --- 1️⃣ Parsear payload Slack ---
-    let payload;
-    if (req.body.payload) {
-      try {
-        payload = JSON.parse(req.body.payload);
-      } catch {
-        payload = req.body;
-      }
-    } else {
-      payload = req.body;
-    }
-
-    console.log("🧩 Tipo de payload Slack:", payload.type);
-
-    // --- 2️⃣ Si es clic en botón: abrir modal dinámico ---
-    if (payload.type === "block_actions") {
-      const trigger_id = payload.trigger_id;
-      if (!trigger_id) return res.status(400).send("Falta trigger_id");
-
-      res.status(200).send(); // responde rápido para evitar timeout
-
-      let campaignsList = [];
-      try {
-        const val = payload.actions?.[0]?.value || "";
-        if (val.startsWith("{") || val.startsWith("[")) {
-          const parsed = JSON.parse(val);
-          if (Array.isArray(parsed)) campaignsList = parsed;
-          else if (typeof parsed === "object")
-            campaignsList = Object.entries(parsed).flatMap(([acc, camps]) =>
-              (camps || []).map((c) => `${acc} | ${c}`)
-            );
-        }
-      } catch (err) {
-        console.warn("⚠️ Error parseando campaignsList:", err.message);
-      }
-
-      if (!campaignsList.length) {
-        console.warn("⚠️ campaignsList vacío, no se abrirá modal.");
-        return;
-      }
-
-      // Dividir en grupos de máximo 10
-      const groups = [];
-      for (let i = 0; i < campaignsList.length; i += 10)
-        groups.push(campaignsList.slice(i, i + 10));
-
-      // Crear bloques dinámicos
-      const blocks = groups.map((group, idx) => ({
-        type: "input",
-        optional: true,
-        block_id: `group_${idx}`,
-        element: {
-          type: "checkboxes",
-          action_id: "selected_campaigns",
-          options: group.map((c, i) => ({
-            text: { type: "plain_text", text: c },
-            value: `excl__${idx}_${i}__${c}`.slice(0, 200),
-          })),
-        },
-        label: { type: "plain_text", text: `Campaigns group ${idx + 1}` },
-      }));
-
-      const modal = {
-        trigger_id,
-        view: {
-          type: "modal",
-          callback_id: "exclude_modal",
-          title: { type: "plain_text", text: "Exclude campaigns" },
-          submit: { type: "plain_text", text: "Save" },
-          close: { type: "plain_text", text: "Cancel" },
-          blocks,
-        },
-      };
-
-      const openResp = await fetch("https://slack.com/api/views.open", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${SLACK_BOT_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(modal),
-      });
-
-      const result = await openResp.json();
-      if (!result.ok) console.error("❌ Error abriendo modal Slack:", result);
-
-      return;
-    }
-
-    // --- 3️⃣ Si se envía el modal: guardar en Google Sheets ---
-    if (payload.type === "view_submission" && payload.view?.callback_id === "exclude_modal") {
-      res.status(200).send({ response_action: "clear" }); // Slack requiere respuesta inmediata
-
-      const stateValues = payload.view.state?.values || {};
-      const user = payload.user?.username || payload.user?.name || "Unknown";
-
-      const selected = Object.values(stateValues)
-        .flatMap((block) => block.selected_campaigns?.selected_options || [])
-        .map((opt) => opt.text.text);
-
-      if (!selected.length) {
-        console.warn("⚠️ No se seleccionaron campañas.");
-        return;
-      }
-
-      console.log(`💾 Guardando ${selected.length} exclusiones de Slack...`);
-
-      // Autenticación con Google
-      const auth = new GoogleAuth({
-        scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-      });
-
-      const sheets = google.sheets({ version: "v4", auth });
-
-      const values = selected.map((c) => [
-        new Date().toISOString(),
-        user,
-        c,
-        "Slack",
-      ]);
-
-      await sheets.spreadsheets.values.append({
-        spreadsheetId: SPREADSHEET_ID,
-        range: `${SHEET_NAME}!A:D`,
-        valueInputOption: "RAW",
-        requestBody: { values },
-      });
-
-      console.log("✅ Exclusiones guardadas correctamente.");
-
-      // Confirmación visual a Slack
-      await fetch("https://slack.com/api/chat.postMessage", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${SLACK_BOT_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          channel: payload.user?.id,
-          text: `✅ ${selected.length} campaigns excluded and saved to Google Sheets.`,
-        }),
-      });
-
-      return;
-    }
-
-    res.status(200).send("OK");
-  } catch (err) {
-    console.error("❌ Error general en slack_exclude:", err);
-    res.status(500).json({ error: err.message });
-  }
 }
-
-
 else{
     return res.status(400).json({ error: "tipo_solicitud no reconocido" });
   }
 
 })
+
+// =======================================================================================================================
+
+app.post("/slack", async (req, res) => {
+  try {
+    // Slack envía "application/x-www-form-urlencoded", no JSON directo
+    const body = req.body.payload ? JSON.parse(req.body.payload) : req.body;
+    console.log("📨 Slack payload recibido:", body.type);
+
+    // Slack requiere responder rápido (3 segundos máximo)
+    res.status(200).send();
+
+    // 👉 Caso: Se envía el modal
+    if (body.type === "block_actions") {
+      const triggerId = body.trigger_id;
+
+      // Modal dinámico
+      const modalView = {
+        type: "modal",
+        callback_id: "exclude_modal",
+        title: { type: "plain_text", text: "Exclude Campaigns" },
+        submit: { type: "plain_text", text: "Submit" },
+        close: { type: "plain_text", text: "Cancel" },
+        blocks: [
+          {
+            type: "input",
+            block_id: "account_select",
+            label: { type: "plain_text", text: "Select account" },
+            element: {
+              type: "plain_text_input",
+              action_id: "account_input",
+              placeholder: {
+                type: "plain_text",
+                text: "Write account ID or name"
+              }
+            }
+          },
+          {
+            type: "input",
+            block_id: "campaigns",
+            label: { type: "plain_text", text: "Campaigns to exclude" },
+            element: {
+              type: "plain_text_input",
+              action_id: "campaigns_input",
+              multiline: true,
+              placeholder: {
+                type: "plain_text",
+                text: "List campaigns separated by commas"
+              }
+            }
+          }
+        ]
+      };
+
+      // Abrir el modal
+      await fetch("https://slack.com/api/views.open", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`
+        },
+        body: JSON.stringify({
+          trigger_id: triggerId,
+          view: modalView
+        })
+      });
+    }
+
+    // 👉 Caso: Cuando el usuario envía el modal
+    if (body.type === "view_submission") {
+      const values = body.view.state.values;
+      const account = values.account_select.account_input.value;
+      const campaigns = values.campaigns.campaigns_input.value
+        .split(",")
+        .map((c) => c.trim())
+        .filter((c) => c);
+
+      console.log("✅ Datos enviados desde Slack:", { account, campaigns });
+
+      // 🔄 Aquí puedes enviar los datos al endpoint /saludo o a otro handler de Google Apps Script
+      const gsUrl = "https://script.google.com/macros/s/AKfycbyYuQOKd6Q6LCFY8so3sIa16H5vioCuTyEL_hRqyCdCU5y2Y1v8q7OlaqkE5C7sKtkp/exec"; // tu webhook de Google Apps Script
+      await fetch(gsUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account, campaigns })
+      });
+    }
+  } catch (err) {
+    console.error("❌ Error procesando Slack request:", err);
+    res.status(500).send("Error interno del servidor");
+  }
+});
+
+// ==================================================
+// ✅ ENDPOINT 3: /status (para probar que el servicio está activo)
+// ==================================================
+app.get("/status", (req, res) => {
+  res.status(200).send("✅ API funcionando correctamente");
+});
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`🚀 Servidor activo en puerto ${PORT}`));
