@@ -722,19 +722,16 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
     const SHEET_NAME = "Exclusions";
 
     // --- 1) Parsear payload de Slack correctamente ---
-    let payload;
-    if (req.body.payload) {
+    let payload = req.body.payload;
+    if (typeof payload === "string") {
       try {
-        payload = JSON.parse(req.body.payload);
-      } catch (e) {
-        console.error("❌ Error parseando req.body.payload:", e);
-        return res.status(400).send("Invalid payload");
+        payload = JSON.parse(payload);
+      } catch (err) {
+        console.warn("⚠️ No se pudo parsear payload:", err.message);
+        payload = req.body;
       }
-    } else if (req.is && req.is("application/json") && req.body.type) {
+    } else if (!payload) {
       payload = req.body;
-    } else {
-      console.log("⚠️ No se detectó payload Slack en la request. Body:", req.body);
-      return res.status(400).send("No Slack payload found");
     }
 
     console.log("🧩 Slack payload type:", payload.type);
