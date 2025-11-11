@@ -840,7 +840,7 @@ app.post("/slack", async (req, res) => {
 
       // Enviar a Google Apps Script
       const gsUrl =
-        "https://script.google.com/macros/s/AKfycbzNx3Ee12TB-oiraT6WWir35VMF9aMw-pG0XM5dvP46GRrYAAuF0GBakEq3FDoSwuju/exec";
+        "https://script.google.com/macros/s/AKfycby5811Ja86qdHCTbp2trzjj9JL-bn5esUoRqsGo2NhK4cHxcRmNSL1mYd5Yv_Wvc2Zr/exec";
 
       const resp = await fetch(gsUrl, {
       method: "POST",
