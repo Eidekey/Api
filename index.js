@@ -840,20 +840,26 @@ app.post("/slack", async (req, res) => {
 
       // Enviar a Google Apps Script
       const gsUrl =
-        "https://script.google.com/macros/s/AKfycbyYuQOKd6Q6LCFY8so3sIa16H5vioCuTyEL_hRqyCdCU5y2Y1v8q7OlaqkE5C7sKtkp/exec";
+        "https://script.google.com/macros/s/AKfycbzuzBjUeMGBe0gm-hweVNIofNUSXFvC8aorV-3KE6k/dev";
 
       const resp = await fetch(gsUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          tipo_solicitud: "slack_exclude",
-          user,
-          campaigns: excludedCampaigns
-        })
-      });
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tipo_solicitud: "slack_exclude",
+        user,
+        campaigns: excludedCampaigns
+      })
+    });
 
-      const json = await resp.json();
+    const text = await resp.text();
+    try {
+      const json = JSON.parse(text);
       console.log("📤 Respuesta de Apps Script:", json);
+    } catch {
+      console.error("⚠️ Apps Script devolvió una respuesta no JSON:", text.slice(0, 100));
+    }
+
       return;
     }
 
