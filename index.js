@@ -721,7 +721,7 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
     const SPREADSHEET_ID = "1D0UpKLXTMmeu3Y0PAsBbPkpBHvtf6zcWe8P8wdoyKvw";
     const SHEET_NAME = "Exclusions";
 
-    // --- 1) Parsear payload de Slack ---
+    // --- 1) Parsear payload ---
     let payload;
     if (req.body.payload) {
       if (typeof req.body.payload === "string") {
@@ -743,15 +743,12 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
     const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
     if (!SLACK_BOT_TOKEN) console.warn("⚠️ SLACK_BOT_TOKEN no definido en las env vars");
 
-    // --- 2) Si se hizo click en el botón ---
+    // --- 2) Click en botón ---
     if (payload.type === "block_actions") {
       console.log("🔘 block_actions recibido. Abriendo modal...");
 
       const trigger_id = payload.trigger_id;
-      if (!trigger_id) {
-        console.error("❌ No trigger_id en payload");
-        return res.status(400).send("No trigger_id");
-      }
+      if (!trigger_id) return res.status(400).send("No trigger_id");
 
       let campaignsList = [];
 
@@ -768,9 +765,6 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
                 (camps || []).map((c) => `${acc} | ${c}`)
               );
             }
-          } else {
-            console.warn("⚠️ Valor no JSON recibido:", val);
-            campaignsList = [];
           }
         }
       } catch (err) {
@@ -782,30 +776,30 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
         return res.status(200).send();
       }
 
-      // --- ✅ DIVIDIR LAS CAMPAÑAS EN BLOQUES DE 10 ---
+      // --- Dividir campañas en grupos de 10 ---
       const chunkSize = 10;
       const chunks = [];
       for (let i = 0; i < campaignsList.length; i += chunkSize) {
         chunks.push(campaignsList.slice(i, i + chunkSize));
       }
 
-      // --- Construir los bloques del modal ---
+      // --- Construir los bloques ---
       const modalBlocks = [];
       chunks.forEach((chunk, idx) => {
         modalBlocks.push({
-          type: "input",
+          type: "section",
           block_id: `campaigns_block_${idx}`,
-          element: {
+          text: {
+            type: "mrkdwn",
+            text: `*Select campaigns to exclude (Group ${idx + 1})*`,
+          },
+          accessory: {
             type: "checkboxes",
             action_id: "selected_campaigns",
             options: chunk.map((c, i) => ({
               text: { type: "plain_text", text: c },
               value: `excl__${idx}_${i}__${c}`.slice(0, 200),
             })),
-          },
-          label: {
-            type: "plain_text",
-            text: `Select campaigns to exclude (Group ${idx + 1})`,
           },
         });
       });
@@ -837,9 +831,12 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
       return res.status(200).send();
     }
 
-    // --- 3) Si es el submit del modal ---
+    // --- 3) Submit del modal ---
     if (payload.type === "view_submission") {
       console.log("📨 view_submission recibido.");
+
+      // ✅ Responder rápido a Slack (para evitar el mensaje de error)
+      res.status(200).json({ response_action: "clear" });
 
       const stateValues = payload.view?.state?.values || {};
       const user =
@@ -847,44 +844,45 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
 
       let excludedCampaigns = [];
       for (const blockId in stateValues) {
-        const action = Object.values(stateValues[blockId])[0];
+        const block = stateValues[blockId];
+        const action = Object.values(block)[0];
         if (!action) continue;
         const selected = action.selected_options || [];
         selected.forEach((opt) => {
           const raw = opt.value;
           const parts = raw.split("__");
-          if (parts.length >= 3) {
-            excludedCampaigns.push(parts.slice(2).join("__"));
-          } else {
-            excludedCampaigns.push(raw);
-          }
+          excludedCampaigns.push(parts.slice(2).join("__"));
         });
       }
 
       console.log("🎯 Campañas seleccionadas:", excludedCampaigns);
 
-      // --- Guardar en Google Sheets ---
-      const date = new Date().toISOString();
-      const auth = new GoogleAuth({
-        scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-      });
-      const client = await auth.getClient();
-      const sheets = google.sheets({ version: "v4", auth: client });
-
+      // --- Guardar en Sheets ---
       if (excludedCampaigns.length > 0) {
-        const rows = excludedCampaigns.map((c) => [user, c, date]);
-        await sheets.spreadsheets.values.append({
-          spreadsheetId: SPREADSHEET_ID,
-          range: `${SHEET_NAME}!A:C`,
-          valueInputOption: "RAW",
-          requestBody: { values: rows },
-        });
-        console.log("✅ Guardadas en Sheet:", excludedCampaigns);
+        try {
+          const date = new Date().toISOString();
+          const auth = new GoogleAuth({
+            scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+          });
+          const client = await auth.getClient();
+          const sheets = google.sheets({ version: "v4", auth: client });
+
+          const rows = excludedCampaigns.map((c) => [user, c, date]);
+          await sheets.spreadsheets.values.append({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${SHEET_NAME}!A:C`,
+            valueInputOption: "RAW",
+            requestBody: { values: rows },
+          });
+          console.log("✅ Guardadas en Sheet:", excludedCampaigns);
+        } catch (err) {
+          console.error("❌ Error guardando en Google Sheets:", err);
+        }
       } else {
         console.log("⚠️ No se seleccionaron campañas en el modal.");
       }
 
-      return res.status(200).json({ response_action: "clear" });
+      return; // ya respondimos arriba
     }
 
     console.log("ℹ️ Payload tipo no manejado:", payload.type);
@@ -894,7 +892,6 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
     return res.status(500).json({ error: err.message });
   }
 }
-
 
 
 else{
