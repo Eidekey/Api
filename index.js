@@ -717,18 +717,16 @@ else{
 
 app.post("/slack", async (req, res) => {
   try {
-    // Slack envía "application/x-www-form-urlencoded", no JSON directo
     const body = req.body.payload ? JSON.parse(req.body.payload) : req.body;
-    console.log("📨 Slack payload recibido:", body.type);
+    console.log("📨 Slack event recibido:", body.type);
 
-    // Slack requiere responder rápido (3 segundos máximo)
+    // Slack necesita respuesta rápida
     res.status(200).send();
 
-    // 👉 Caso: Se envía el modal
+    // ➤ 1. Mostrar modal cuando se hace clic en "Exclude campaigns"
     if (body.type === "block_actions") {
       const triggerId = body.trigger_id;
 
-      // Modal dinámico
       const modalView = {
         type: "modal",
         callback_id: "exclude_modal",
@@ -739,34 +737,31 @@ app.post("/slack", async (req, res) => {
           {
             type: "input",
             block_id: "account_select",
-            label: { type: "plain_text", text: "Select account" },
+            label: { type: "plain_text", text: "Account name or ID" },
             element: {
               type: "plain_text_input",
               action_id: "account_input",
-              placeholder: {
-                type: "plain_text",
-                text: "Write account ID or name"
-              }
+              placeholder: { type: "plain_text", text: "Example: act_12345" }
             }
           },
           {
             type: "input",
-            block_id: "campaigns",
+            block_id: "campaigns_input",
             label: { type: "plain_text", text: "Campaigns to exclude" },
             element: {
               type: "plain_text_input",
-              action_id: "campaigns_input",
+              action_id: "campaigns_text",
               multiline: true,
               placeholder: {
                 type: "plain_text",
-                text: "List campaigns separated by commas"
+                text: "Separate campaigns by commas"
               }
             }
           }
         ]
       };
 
-      // Abrir el modal
+      // Abrir modal
       await fetch("https://slack.com/api/views.open", {
         method: "POST",
         headers: {
@@ -780,34 +775,40 @@ app.post("/slack", async (req, res) => {
       });
     }
 
-    // 👉 Caso: Cuando el usuario envía el modal
+    // ➤ 2. Cuando el usuario envía el modal
     if (body.type === "view_submission") {
       const values = body.view.state.values;
-      const account = values.account_select.account_input.value;
-      const campaigns = values.campaigns.campaigns_input.value
+      const account =
+        values.account_select.account_input.value?.trim() || "Unknown";
+      const campaignsText =
+        values.campaigns_input.campaigns_text.value?.trim() || "";
+
+      const campaigns = campaignsText
         .split(",")
         .map((c) => c.trim())
         .filter((c) => c);
 
-      console.log("✅ Datos enviados desde Slack:", { account, campaigns });
+      console.log("✅ Campañas recibidas:", { account, campaigns });
 
-      // 🔄 Aquí puedes enviar los datos al endpoint /saludo o a otro handler de Google Apps Script
-      const gsUrl = "https://script.google.com/macros/s/AKfycbyYuQOKd6Q6LCFY8so3sIa16H5vioCuTyEL_hRqyCdCU5y2Y1v8q7OlaqkE5C7sKtkp/exec"; // tu webhook de Google Apps Script
+      // ➤ 3. Enviar los datos a Google Apps Script
+      const gsUrl =
+        "https://script.google.com/macros/s/AKfycbxxxxxxxxxxxxxxxxxxxxxxxxxxxx/exec"; // ⬅️ REEMPLAZA con tu URL de Apps Script Web App
+
       await fetch(gsUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account, campaigns })
+        body: JSON.stringify({
+          tipo_solicitud: "slack_exclude",
+          account,
+          campaigns
+        })
       });
     }
   } catch (err) {
-    console.error("❌ Error procesando Slack request:", err);
-    res.status(500).send("Error interno del servidor");
+    console.error("❌ Error en /slack:", err);
+    res.status(500).send("Error interno");
   }
 });
-
-// ==================================================
-// ✅ ENDPOINT 3: /status (para probar que el servicio está activo)
-// ==================================================
 app.get("/status", (req, res) => {
   res.status(200).send("✅ API funcionando correctamente");
 });
