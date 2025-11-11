@@ -706,7 +706,7 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
     console.error("❌ Error general en errors_full:", err);
     res.status(500).json({ error: err.message });
   }
-} else if (
+}else if (
   req.body.tipo_solicitud === "slack_exclude" ||
   req.body.type === "block_actions" ||
   (req.body.payload && req.body.payload.includes("block_actions"))
@@ -721,7 +721,7 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
     const SPREADSHEET_ID = "1D0UpKLXTMmeu3Y0PAsBbPkpBHvtf6zcWe8P8wdoyKvw";
     const SHEET_NAME = "Exclusions";
 
-    // --- 1) Parsear payload ---
+    // --- 1) Parsear payload de Slack correctamente ---
     let payload;
     if (req.body.payload) {
       if (typeof req.body.payload === "string") {
@@ -741,14 +741,19 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
     console.log("🧩 Slack payload type:", payload.type);
 
     const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
-    if (!SLACK_BOT_TOKEN) console.warn("⚠️ SLACK_BOT_TOKEN no definido en las env vars");
+    if (!SLACK_BOT_TOKEN) {
+      console.warn("⚠️ SLACK_BOT_TOKEN no definido en las env vars");
+    }
 
-    // --- 2) Click en botón ---
+    // --- 2) Si se hizo click en el botón ---
     if (payload.type === "block_actions") {
       console.log("🔘 block_actions recibido. Abriendo modal...");
 
       const trigger_id = payload.trigger_id;
-      if (!trigger_id) return res.status(400).send("No trigger_id");
+      if (!trigger_id) {
+        console.error("❌ No trigger_id en payload");
+        return res.status(400).send("No trigger_id");
+      }
 
       let campaignsList = [];
 
@@ -756,6 +761,7 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
         const act = payload.actions && payload.actions[0];
         if (act?.value) {
           const val = act.value.trim();
+
           if ((val.startsWith("{") && val.endsWith("}")) || (val.startsWith("[") && val.endsWith("]"))) {
             const parsed = JSON.parse(val);
             if (Array.isArray(parsed)) {
@@ -765,6 +771,9 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
                 (camps || []).map((c) => `${acc} | ${c}`)
               );
             }
+          } else {
+            console.warn("⚠️ Valor no JSON recibido:", val);
+            campaignsList = [];
           }
         }
       } catch (err) {
@@ -776,33 +785,27 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
         return res.status(200).send();
       }
 
-      // --- Dividir campañas en grupos de 10 ---
-      const chunkSize = 10;
-      const chunks = [];
-      for (let i = 0; i < campaignsList.length; i += chunkSize) {
-        chunks.push(campaignsList.slice(i, i + chunkSize));
+      // --- Dividir en grupos de máximo 10 campañas ---
+      const groups = [];
+      for (let i = 0; i < campaignsList.length; i += 10) {
+        groups.push(campaignsList.slice(i, i + 10));
       }
 
-      // --- Construir los bloques ---
-      const modalBlocks = [];
-      chunks.forEach((chunk, idx) => {
-        modalBlocks.push({
-          type: "section",
-          block_id: `campaigns_block_${idx}`,
-          text: {
-            type: "mrkdwn",
-            text: `*Select campaigns to exclude (Group ${idx + 1})*`,
-          },
-          accessory: {
-            type: "checkboxes",
-            action_id: "selected_campaigns",
-            options: chunk.map((c, i) => ({
-              text: { type: "plain_text", text: c },
-              value: `excl__${idx}_${i}__${c}`.slice(0, 200),
-            })),
-          },
-        });
-      });
+      // --- Construir bloques ---
+      const blocks = groups.map((group, idx) => ({
+        type: "input",
+        optional: true, // 👈 permite dejar grupos sin seleccionar
+        block_id: `group_${idx}`,
+        element: {
+          type: "checkboxes",
+          action_id: "selected_campaigns",
+          options: group.map((c, i) => ({
+            text: { type: "plain_text", text: c },
+            value: `excl__${idx}_${i}__${c}`.slice(0, 200),
+          })),
+        },
+        label: { type: "plain_text", text: `Campaigns group ${idx + 1}` },
+      }));
 
       const modal = {
         trigger_id,
@@ -812,11 +815,10 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
           title: { type: "plain_text", text: "Exclude campaigns" },
           submit: { type: "plain_text", text: "Save" },
           close: { type: "plain_text", text: "Cancel" },
-          blocks: modalBlocks,
+          blocks,
         },
       };
 
-      // --- Enviar modal a Slack ---
       const openResp = await fetch("https://slack.com/api/views.open", {
         method: "POST",
         headers: {
@@ -831,58 +833,63 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
       return res.status(200).send();
     }
 
-    // --- 3) Submit del modal ---
+    // --- 3) Si es el submit del modal ---
     if (payload.type === "view_submission") {
       console.log("📨 view_submission recibido.");
 
-      // ✅ Responder rápido a Slack (para evitar el mensaje de error)
+      // ✅ Responder inmediatamente a Slack para evitar el error visual
       res.status(200).json({ response_action: "clear" });
 
-      const stateValues = payload.view?.state?.values || {};
-      const user =
-        payload.user?.username || payload.user?.name || payload.user?.id || "Unknown_User";
-
-      let excludedCampaigns = [];
-      for (const blockId in stateValues) {
-        const block = stateValues[blockId];
-        const action = Object.values(block)[0];
-        if (!action) continue;
-        const selected = action.selected_options || [];
-        selected.forEach((opt) => {
-          const raw = opt.value;
-          const parts = raw.split("__");
-          excludedCampaigns.push(parts.slice(2).join("__"));
-        });
-      }
-
-      console.log("🎯 Campañas seleccionadas:", excludedCampaigns);
-
-      // --- Guardar en Sheets ---
-      if (excludedCampaigns.length > 0) {
+      // ⏳ Ejecutar la lógica en segundo plano
+      (async () => {
         try {
-          const date = new Date().toISOString();
+          const stateValues = payload.view?.state?.values || {};
+          const user =
+            payload.user?.username || payload.user?.name || payload.user?.id || "Unknown_User";
+
+          let excludedCampaigns = [];
+          for (const blockId in stateValues) {
+            const block = stateValues[blockId];
+            const action = Object.values(block)[0];
+            if (!action) continue;
+            const selected = action.selected_options || [];
+            selected.forEach((opt) => {
+              const raw = opt.value;
+              const parts = raw.split("__");
+              excludedCampaigns.push(parts.slice(2).join("__"));
+            });
+          }
+
+          console.log("🎯 Campañas seleccionadas:", excludedCampaigns);
+
+          if (excludedCampaigns.length === 0) {
+            console.log("⚠️ No se seleccionaron campañas.");
+            return;
+          }
+
           const auth = new GoogleAuth({
             scopes: ["https://www.googleapis.com/auth/spreadsheets"],
           });
           const client = await auth.getClient();
           const sheets = google.sheets({ version: "v4", auth: client });
 
+          const date = new Date().toISOString();
           const rows = excludedCampaigns.map((c) => [user, c, date]);
+
           await sheets.spreadsheets.values.append({
             spreadsheetId: SPREADSHEET_ID,
             range: `${SHEET_NAME}!A:C`,
             valueInputOption: "RAW",
             requestBody: { values: rows },
           });
-          console.log("✅ Guardadas en Sheet:", excludedCampaigns);
-        } catch (err) {
-          console.error("❌ Error guardando en Google Sheets:", err);
-        }
-      } else {
-        console.log("⚠️ No se seleccionaron campañas en el modal.");
-      }
 
-      return; // ya respondimos arriba
+          console.log("✅ Guardadas en Google Sheets:", excludedCampaigns);
+        } catch (err) {
+          console.error("❌ Error guardando en Sheets:", err);
+        }
+      })();
+
+      return; // 👈 importante para no ejecutar nada más
     }
 
     console.log("ℹ️ Payload tipo no manejado:", payload.type);
