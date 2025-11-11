@@ -708,8 +708,8 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
   }
 } else if (
   req.body.tipo_solicitud === "slack_exclude" ||
-  req.body.payload ||
-  (req.is && req.is("application/json") && (req.body.type === "block_actions" || req.body.type === "view_submission"))
+  req.body.type === "block_actions" ||
+  (req.body.payload && req.body.payload.includes("block_actions"))
 ) {
   try {
     console.log("🚀 Entrando en handler slack_exclude (ESM)");
@@ -722,15 +722,21 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
     const SHEET_NAME = "Exclusions";
 
     // --- 1) Parsear payload de Slack correctamente ---
-    let payload = req.body.payload;
-    if (typeof payload === "string") {
-      try {
-        payload = JSON.parse(payload);
-      } catch (err) {
-        console.warn("⚠️ No se pudo parsear payload:", err.message);
-        payload = req.body;
+    let payload;
+
+    if (req.body.payload) {
+      // A veces Slack manda el payload como string, a veces como objeto
+      if (typeof req.body.payload === "string") {
+        try {
+          payload = JSON.parse(req.body.payload);
+        } catch (err) {
+          console.warn("⚠️ No se pudo parsear req.body.payload. Usando cuerpo original:", err.message);
+          payload = req.body;
+        }
+      } else {
+        payload = req.body.payload;
       }
-    } else if (!payload) {
+    } else {
       payload = req.body;
     }
 
