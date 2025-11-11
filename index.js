@@ -717,98 +717,155 @@ else{
 
 app.post("/slack", async (req, res) => {
   try {
-    const body = req.body.payload ? JSON.parse(req.body.payload) : req.body;
-    console.log("📨 Slack event recibido:", body.type);
+    const payload = req.body.payload ? JSON.parse(req.body.payload) : req.body;
+    console.log("📨 Slack event recibido:", payload.type);
 
-    // Slack necesita respuesta rápida
+    // Slack necesita respuesta inmediata
     res.status(200).send();
 
-    // ➤ 1. Mostrar modal cuando se hace clic en "Exclude campaigns"
-    if (body.type === "block_actions") {
-      const triggerId = body.trigger_id;
+    // ===============================================
+    // ➤ 1. Abrir modal al hacer clic en "Exclude campaigns"
+    // ===============================================
+    if (payload.type === "block_actions") {
+      console.log("🧩 block_actions recibido");
 
-      const modalView = {
+      const triggerId = payload.trigger_id;
+      const action = payload.actions && payload.actions[0];
+      let campaignsList = [];
+
+      // Extraer lista de campañas del valor del botón
+      if (action?.value) {
+        try {
+          const val = action.value.trim();
+          if (val.startsWith("{") || val.startsWith("[")) {
+            const parsed = JSON.parse(val);
+            if (Array.isArray(parsed)) {
+              campaignsList = parsed;
+            } else if (typeof parsed === "object") {
+              campaignsList = Object.entries(parsed).flatMap(([acc, camps]) =>
+                (camps || []).map((c) => `${acc} | ${c}`)
+              );
+            }
+          } else {
+            console.warn("⚠️ Valor no JSON recibido:", val);
+          }
+        } catch (err) {
+          console.error("❌ Error al parsear campañas:", err);
+        }
+      }
+
+      if (!campaignsList.length) {
+        console.warn("⚠️ campaignsList vacío, no se abrirá modal.");
+        return;
+      }
+
+      console.log(`📋 ${campaignsList.length} campañas detectadas`);
+
+      // ➤ Agrupar campañas en bloques de máximo 10
+      const chunkSize = 10;
+      const blocks = [];
+
+      for (let i = 0; i < campaignsList.length; i += chunkSize) {
+        const slice = campaignsList.slice(i, i + chunkSize);
+        const options = slice.map((c, idx) => ({
+          text: { type: "plain_text", text: c },
+          value: `excl_${i + idx}__${c}`.slice(0, 200)
+        }));
+
+        blocks.push({
+          type: "input",
+          optional: true, // ✅ ahora no obliga a seleccionar en cada grupo
+          block_id: `block_${i / chunkSize}`,
+          label: { type: "plain_text", text: `Campaigns ${i + 1}–${i + slice.length}` },
+          element: {
+            type: "checkboxes",
+            action_id: "selected_campaigns",
+            options
+          }
+        });
+      }
+
+      const modal = {
         type: "modal",
         callback_id: "exclude_modal",
         title: { type: "plain_text", text: "Exclude Campaigns" },
-        submit: { type: "plain_text", text: "Submit" },
+        submit: { type: "plain_text", text: "Save" },
         close: { type: "plain_text", text: "Cancel" },
-        blocks: [
-          {
-            type: "input",
-            block_id: "account_select",
-            label: { type: "plain_text", text: "Account name or ID" },
-            element: {
-              type: "plain_text_input",
-              action_id: "account_input",
-              placeholder: { type: "plain_text", text: "Example: act_12345" }
-            }
-          },
-          {
-            type: "input",
-            block_id: "campaigns_input",
-            label: { type: "plain_text", text: "Campaigns to exclude" },
-            element: {
-              type: "plain_text_input",
-              action_id: "campaigns_text",
-              multiline: true,
-              placeholder: {
-                type: "plain_text",
-                text: "Separate campaigns by commas"
-              }
-            }
-          }
-        ]
+        blocks
       };
 
-      // Abrir modal
-      await fetch("https://slack.com/api/views.open", {
+      // Abrir modal en Slack
+      const resp = await fetch("https://slack.com/api/views.open", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`
         },
-        body: JSON.stringify({
-          trigger_id: triggerId,
-          view: modalView
-        })
+        body: JSON.stringify({ trigger_id: triggerId, view: modal })
       });
+
+      const json = await resp.json();
+      console.log("📬 Slack views.open response:", json);
+      return;
     }
 
-    // ➤ 2. Cuando el usuario envía el modal
-    if (body.type === "view_submission") {
-      const values = body.view.state.values;
-      const account =
-        values.account_select.account_input.value?.trim() || "Unknown";
-      const campaignsText =
-        values.campaigns_input.campaigns_text.value?.trim() || "";
+    // ===============================================
+    // ➤ 2. Procesar el envío del modal
+    // ===============================================
+    if (payload.type === "view_submission") {
+      console.log("📨 view_submission recibido");
 
-      const campaigns = campaignsText
-        .split(",")
-        .map((c) => c.trim())
-        .filter((c) => c);
+      const stateValues = payload.view?.state?.values || {};
+      const user =
+        payload.user?.username || payload.user?.name || payload.user?.id || "Unknown_User";
 
-      console.log("✅ Campañas recibidas:", { account, campaigns });
+      const excludedCampaigns = [];
 
-      // ➤ 3. Enviar los datos a Google Apps Script
+      for (const blockId in stateValues) {
+        const action = Object.values(stateValues[blockId])[0];
+        if (!action) continue;
+        const selected = action.selected_options || [];
+        selected.forEach((opt) => {
+          const val = opt.value.split("__").slice(1).join("__");
+          excludedCampaigns.push(val);
+        });
+      }
+
+      console.log("✅ Campañas seleccionadas:", excludedCampaigns);
+
+      if (!excludedCampaigns.length) {
+        console.log("⚠️ No se seleccionaron campañas");
+        return;
+      }
+
+      // Enviar a Google Apps Script
       const gsUrl =
-        "https://script.google.com/macros/s/AKfycbxxxxxxxxxxxxxxxxxxxxxxxxxxxx/exec"; // ⬅️ REEMPLAZA con tu URL de Apps Script Web App
+        "https://script.google.com/macros/s/AKfycbyYuQOKd6Q6LCFY8so3sIa16H5vioCuTyEL_hRqyCdCU5y2Y1v8q7OlaqkE5C7sKtkp/exec";
 
-      await fetch(gsUrl, {
+      const resp = await fetch(gsUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           tipo_solicitud: "slack_exclude",
-          account,
-          campaigns
+          user,
+          campaigns: excludedCampaigns
         })
       });
+
+      const json = await resp.json();
+      console.log("📤 Respuesta de Apps Script:", json);
+      return;
     }
+
+    console.log("ℹ️ Evento no manejado:", payload.type);
   } catch (err) {
     console.error("❌ Error en /slack:", err);
-    res.status(500).send("Error interno");
   }
 });
+
+// ==================================================
+// Endpoint simple para verificar estado
+// ==================================================
 app.get("/status", (req, res) => {
   res.status(200).send("✅ API funcionando correctamente");
 });
