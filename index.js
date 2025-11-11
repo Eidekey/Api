@@ -729,7 +729,7 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
         try {
           payload = JSON.parse(req.body.payload);
         } catch (err) {
-          console.warn("⚠️ req.body.payload no es JSON. Usando cuerpo original:", err.message);
+          console.warn("⚠️ No se pudo parsear req.body.payload, usando cuerpo original:", err.message);
           payload = req.body;
         }
       } else {
@@ -742,7 +742,9 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
     console.log("🧩 Slack payload type:", payload.type);
 
     const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
-    if (!SLACK_BOT_TOKEN) console.warn("⚠️ SLACK_BOT_TOKEN no definido en las env vars");
+    if (!SLACK_BOT_TOKEN) {
+      console.warn("⚠️ SLACK_BOT_TOKEN no definido en las env vars");
+    }
 
     // --- 2) Si se hizo click en el botón ---
     if (payload.type === "block_actions") {
@@ -754,30 +756,27 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
         return res.status(400).send("No trigger_id");
       }
 
-      // --- Extraer campañas del valor del botón ---
       let campaignsList = [];
 
       try {
         const act = payload.actions && payload.actions[0];
-        const value = act?.value;
+        if (act?.value) {
+          const val = act.value.trim();
 
-        if (!value) {
-          console.warn("⚠️ No se encontró 'value' en la acción de Slack.");
-        } else {
-          // ✅ Verificar si es JSON antes de parsear
-          const looksLikeJson = value.trim().startsWith("{") || value.trim().startsWith("[");
-          if (looksLikeJson) {
-            const parsed = JSON.parse(value);
-            if (typeof parsed === "object" && !Array.isArray(parsed)) {
+          // Intentamos parsear como JSON solo si parece JSON
+          if ((val.startsWith("{") && val.endsWith("}")) || (val.startsWith("[") && val.endsWith("]"))) {
+            const parsed = JSON.parse(val);
+            if (Array.isArray(parsed)) {
+              campaignsList = parsed;
+            } else if (typeof parsed === "object") {
               campaignsList = Object.entries(parsed).flatMap(([acc, camps]) =>
                 (camps || []).map((c) => `${acc} | ${c}`)
               );
-            } else if (Array.isArray(parsed)) {
-              campaignsList = parsed.slice();
             }
           } else {
-            // Si no es JSON, probablemente sea un texto genérico
-            console.warn(`⚠️ Valor no JSON recibido: ${value}`);
+            console.warn("⚠️ Valor no JSON recibido:", val);
+            // Si no es JSON, usa un valor por defecto o ignora
+            campaignsList = [];
           }
         }
       } catch (err) {
@@ -791,7 +790,7 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
 
       const options = campaignsList.map((c, i) => ({
         text: { type: "plain_text", text: c },
-        value: `excl__${i}__${c}`.slice(0, 200),
+        value: `excl__${i}__${c}`.slice(0, 200)
       }));
 
       const modal = {
@@ -809,21 +808,21 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
               element: {
                 type: "checkboxes",
                 action_id: "selected_campaigns",
-                options,
+                options
               },
-              label: { type: "plain_text", text: "Select campaigns to exclude" },
-            },
-          ],
-        },
+              label: { type: "plain_text", text: "Select campaigns to exclude" }
+            }
+          ]
+        }
       };
 
       const openResp = await fetch("https://slack.com/api/views.open", {
         method: "POST",
         headers: {
           "Content-Type": "application/json; charset=utf-8",
-          Authorization: `Bearer ${SLACK_BOT_TOKEN}`,
+          Authorization: `Bearer ${SLACK_BOT_TOKEN}`
         },
-        body: JSON.stringify({ trigger_id, view: modal.view }),
+        body: JSON.stringify({ trigger_id, view: modal.view })
       });
 
       const openJson = await openResp.json();
@@ -857,10 +856,9 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
 
       console.log("🎯 Campañas seleccionadas:", excludedCampaigns);
 
-      // --- Guardar en Google Sheets ---
       const date = new Date().toISOString();
       const auth = new GoogleAuth({
-        scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+        scopes: ["https://www.googleapis.com/auth/spreadsheets"]
       });
       const client = await auth.getClient();
       const sheets = google.sheets({ version: "v4", auth: client });
@@ -871,7 +869,7 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
           spreadsheetId: SPREADSHEET_ID,
           range: `${SHEET_NAME}!A:C`,
           valueInputOption: "RAW",
-          requestBody: { values: rows },
+          requestBody: { values: rows }
         });
         console.log("✅ Guardadas en Sheet:", excludedCampaigns);
       } else {
@@ -888,7 +886,6 @@ console.log("✅ Nombres de ad accounts obtenidos (batch).");
     return res.status(500).json({ error: err.message });
   }
 }
-
 
 
 
