@@ -1,6 +1,6 @@
 import express from "express";
 import fetch from "node-fetch";
-import cheerio from "cheerio";
+import { load } from "cheerio";
 
 const app = express();
 app.use(express.json());
@@ -932,7 +932,7 @@ async function revisarLanding(url) {
     }
 
     const html = await resp.text();
-    const $ = cheerio.load(html);
+    const $ = load(html);
 
     // detecta calendarios típicos
     const tieneCalendario =
