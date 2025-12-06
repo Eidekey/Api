@@ -936,7 +936,7 @@ async function revisarLanding(url) {
 
     // 1. Script del widget
     const tieneScript =
-      html.includes("widgets.leadconnectorhq.com") ||
+      html.includes("widgets-date-block") ||
       $("script[src*='widgets.leadconnectorhq.com']").length > 0;
 
     // 2. Iframe del calendario (SIN importar el ID)
