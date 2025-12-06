@@ -10,6 +10,7 @@
     "express": "^4.19.2",
     "node-fetch": "^3.3.2",   
     "googleapis": "^134.0.0",
-    "google-auth-library": "^9.0.0"
+    "google-auth-library": "^9.0.0",
+    "cheerio": "^1.0.0"
   }
 }
