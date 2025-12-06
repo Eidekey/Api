@@ -1,5 +1,6 @@
 import express from "express";
 import fetch from "node-fetch";
+import cheerio from "cheerio";
 
 const app = express();
 app.use(express.json());
@@ -868,6 +869,94 @@ app.post("/slack", async (req, res) => {
     console.error("❌ Error en /slack:", err);
   }
 });
+
+export default function registerLandingRoutes(app) {
+
+  app.post("/verificarLanding", async (req, res) => {
+    const { ad_id } = req.body;
+
+    if (!ad_id) {
+      return res.status(400).json({ error: "Falta ad_id en body" });
+    }
+
+    try {
+      const API_VERSION = "v23.0";
+      const META_TOKEN = "EAAWKn4ZCjg3ABPvM6yNdpT3m0YC4NlOZBqnk6NwP3357JZBlLVtfvSggaJde3bkislJxnIjagEGl5TZCgh2ZB9wFBHtBf7UxkaU90P3g7LMOpkv90ByZC4ODy83ebh4x7egB6vqsHZCecKWGwgAuKLHDOflDLKwlWMNZBv5bQgpCGvv7JlPkUCa4PJlRIRYvfeL5SAZDZD";
+
+      // 1. Llamar a Meta para obtener la landing page
+      const metaUrl = `https://graph.facebook.com/${API_VERSION}/${ad_id}?fields=adcreatives{object_story_spec{link_data{link}}}&access_token=${META_TOKEN}`;
+
+      const raw = await fetch(metaUrl);
+      const data = await raw.json();
+
+      const landing =
+        data?.adcreatives?.data?.[0]?.object_story_spec?.link_data?.link;
+
+      if (!landing) {
+        return res.json({
+          ad_id,
+          ok: false,
+          error: "El anuncio no tiene landing page"
+        });
+      }
+
+      // 2. Revisar la landing con Cheerio
+      const result = await revisarLanding(landing);
+
+      res.json({
+        ad_id,
+        landing,
+        ...result
+      });
+
+    } catch (err) {
+      res.json({
+        ad_id,
+        ok: false,
+        error: err.toString()
+      });
+    }
+  });
+}
+
+
+// ----------------------
+//   Función auxiliar
+// ----------------------
+async function revisarLanding(url) {
+  try {
+    const resp = await fetch(url, { timeout: 8000 });
+
+    if (!resp.ok) {
+      return { ok: false, status: resp.status, calendario: false };
+    }
+
+    const html = await resp.text();
+    const $ = cheerio.load(html);
+
+    // detecta calendarios típicos
+    const tieneCalendario =
+      html.includes("widgets.leadconnectorhq.com") ||
+      html.includes("calendly.com/assets/external/widget.js") ||
+      $("iframe[src*='calendar']").length > 0 ||
+      $("script[src*='calendar']").length > 0;
+
+    return {
+      ok: true,
+      status: 200,
+      calendario: tieneCalendario
+    };
+
+  } catch (err) {
+    return {
+      ok: false,
+      status: "timeout/error",
+      calendario: false
+    };
+  }
+}
+
+
 
 // ==================================================
 // Endpoint simple para verificar estado
