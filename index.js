@@ -870,7 +870,7 @@ app.post("/slack", async (req, res) => {
   }
 });
 
-export default function registerLandingRoutes(app) {
+
 
   app.post("/verificarLanding", async (req, res) => {
     const { ad_id } = req.body;
@@ -917,7 +917,7 @@ export default function registerLandingRoutes(app) {
       });
     }
   });
-}
+
 
 
 // ----------------------
@@ -955,6 +955,7 @@ async function revisarLanding(url) {
     };
   }
 }
+
 
 
 
