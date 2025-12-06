@@ -934,17 +934,20 @@ async function revisarLanding(url) {
     const html = await resp.text();
     const $ = load(html);
 
-    // detecta calendarios típicos
-    const tieneCalendario =
+    // 1. Script del widget
+    const tieneScript =
       html.includes("widgets.leadconnectorhq.com") ||
-      html.includes("calendly.com/assets/external/widget.js") ||
-      $("iframe[src*='calendar']").length > 0 ||
-      $("script[src*='calendar']").length > 0;
+      $("script[src*='widgets.leadconnectorhq.com']").length > 0;
+
+    // 2. Iframe del calendario (SIN importar el ID)
+    const tieneIframe =
+      $("iframe[src*='/calendar/']").length > 0 ||
+      $("iframe[src*='leadconnectorhq.com/calendar']").length > 0;
 
     return {
       ok: true,
       status: 200,
-      calendario: tieneCalendario
+      calendario: tieneScript && tieneIframe
     };
 
   } catch (err) {
@@ -955,6 +958,7 @@ async function revisarLanding(url) {
     };
   }
 }
+
 
 
 
