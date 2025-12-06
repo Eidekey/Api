@@ -947,7 +947,7 @@ async function revisarLanding(url) {
     return {
       ok: true,
       status: 200,
-      calendario: tieneScript && tieneIframe
+      calendario: tieneScript || tieneIframe
     };
 
   } catch (err) {
