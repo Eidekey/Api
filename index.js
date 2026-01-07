@@ -19,7 +19,7 @@ app.post("/saludo", async (req, res) => {
 
   const today = new Date();
   const since3 = new Date(today);
-  since3.setDate(today.getDate() - 3);
+  since3.setDate(today.getDate() - 2 );
 
   const since7 = new Date(today);
   since7.setDate(today.getDate() - 6);
