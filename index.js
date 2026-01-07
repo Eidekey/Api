@@ -22,7 +22,7 @@ app.post("/saludo", async (req, res) => {
   since3.setDate(today.getDate() - 3);
 
   const since7 = new Date(today);
-  since7.setDate(today.getDate() - 7);
+  since7.setDate(today.getDate() - 6);
 
 
   const fechas = {
